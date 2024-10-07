@@ -4,6 +4,7 @@ namespace App\Service;
 use App\Entity\Contact;
 use App\Model\EmailModel;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
@@ -18,8 +19,17 @@ class EmailService
   /** @var MailerInterface $mailer */
   protected MailerInterface $mailer;
 
-  public function __construct(MailerInterface  $mailer) {
+  /**
+   * @var string
+   */
+  protected string $emailTo;
+
+  public function __construct(
+    MailerInterface  $mailer,
+    #[Autowire(value: '%env(string:EMAIL_TO)%')] string $emailTo
+  ) {
     $this->mailer = $mailer;
+    $this->emailTo = $emailTo;
   }
 
   /**
@@ -32,13 +42,12 @@ class EmailService
   public function sendMail(Contact $contact) : void{
 
   // $toEmail = getenv('EMAIL_TO');
-   $toEmail ='kaluolin.maozi@gmail.com';
    $message = nl2br($contact->getMessage());
 
    try{
       $emailObject = (new TemplatedEmail())
         ->from($contact->getEmail())
-        ->to($toEmail)
+        ->to($this->emailTo)
         ->subject('Contact submission')
         ->htmlTemplate('email/contact.html.twig')
         ->context([

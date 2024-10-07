@@ -4,6 +4,7 @@ namespace App\State;
 
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
+use App\Dto\ContactDto;
 use App\Entity\Contact;
 use App\Service\EmailService;
 use Doctrine\ORM\EntityManagerInterface;
