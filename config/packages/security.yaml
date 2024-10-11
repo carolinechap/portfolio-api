@@ -9,8 +9,10 @@ security:
                 class: App\Entity\User
                 property: email
     firewalls:
-        login:
-            pattern: ^/api/users/authenticate
+        dev:
+            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            security: false
+        main:
             stateless: true
             provider: users
             json_login:
@@ -19,18 +21,12 @@ security:
                 password_path: password
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
-        dev:
-            pattern: ^/(_(profiler|wdt)|css|images|js)/
-            security: false
-        api:
-            pattern: ^/api/
-            stateless: true
-            provider: users
             jwt: ~
 
     access_control:
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
         - { path: ^/api/users/authenticate$, roles: PUBLIC_ACCESS, methods: [ POST ]  }
+        - { path: ^/api/contacts, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/, roles: IS_AUTHENTICATED_FULLY }
 
 when@test:
