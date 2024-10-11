@@ -5,6 +5,8 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     google_recaptcha_site_key: '%env(GOOGLE_RECAPTCHA_SITE_KEY)%'
+    admin_email: '%env(USER_ADMIN_EMAIL)%'
+    admin_password: '%env(USER_ADMIN_PASSWORD)%'
 
 services:
     # default configuration for services in *this* file
