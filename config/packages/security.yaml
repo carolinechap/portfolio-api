@@ -3,6 +3,7 @@ security:
     password_hashers:
         App\Entity\User:
             algorithm: argon2i
+    enable_authenticator_manager: true
     providers:
         users:
             entity:
@@ -10,13 +11,13 @@ security:
                 property: email
     firewalls:
         dev:
-            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            pattern: ^/_(profiler|wdt)
             security: false
         main:
             stateless: true
             provider: users
             json_login:
-                check_path: users_authenticate
+                check_path: auth
                 username_path: email
                 password_path: password
                 success_handler: lexik_jwt_authentication.handler.authentication_success
@@ -25,8 +26,8 @@ security:
 
     access_control:
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
-        - { path: ^/api/users/authenticate$, roles: PUBLIC_ACCESS, methods: [ POST ]  }
-        - { path: ^/api/contacts, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/login, roles: PUBLIC_ACCESS, methods: [ POST ]  }
+        - { path: ^/api/contacts, roles: IS_AUTHENTICATED_FULLY, methods: [ POST ] }
         - { path: ^/, roles: IS_AUTHENTICATED_FULLY }
 
 when@test:

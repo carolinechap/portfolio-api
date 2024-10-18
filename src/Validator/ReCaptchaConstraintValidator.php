@@ -34,7 +34,7 @@ class ReCaptchaConstraintValidator extends ConstraintValidator
   public function __construct(
     HttpClientInterface $httpClient,
     #[Autowire(value: '%env(string:RECAPTCHA_URL)%')] string $recaptchaUrl,
-    #[Autowire(value: '%env(string:RECAPTCHA_SECRET_KEY)%')] string $recaptchaSecretKey
+    #[Autowire(value: '%env(string:GOOGLE_RECAPTCHA_SITE_KEY)%')] string $recaptchaSecretKey
 
   )
   {
@@ -57,9 +57,9 @@ class ReCaptchaConstraintValidator extends ConstraintValidator
       throw new UnexpectedValueException($value, 'string');
     }
 
-    $response = $this->httpClient->request('POST', getenv('RECAPTCHA_URL'), [
+    $response = $this->httpClient->request('POST', $this->recaptchaUrl, [
       'body' => [
-        'secret' => getenv('RECAPTCHA_SECRET_KEY'),
+        'secret' => $this->recaptchaSecretKey,
         'response' => $value,
       ],
     ]);
