@@ -27,6 +27,7 @@ use Symfony\Component\Validator\Constraints\NotBlank;
   operations: [
     new Post(
       processor: ContactProcessor::class,
+      security: 'is_granted(\'' . User::ROLE_ADMIN . '\')'
     ),
   ],
   normalizationContext: ['groups' => ['contact:read']],
