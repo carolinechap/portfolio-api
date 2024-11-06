@@ -28,7 +28,10 @@ final class ContactProcessor implements ProcessorInterface
     if ($data instanceof Contact === false) {
       return $this->persistProcessor->process($data, $operation, $uriVariables, $context);
     }
-    $this->emailService->sendMail($data);
+
+    try {
+      $this->emailService->sendMail($data);
+    } catch (\Exception $e){}
 
     return $this->persistProcessor->process($data, $operation, $uriVariables, $context);
   }

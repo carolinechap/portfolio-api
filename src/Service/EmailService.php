@@ -24,12 +24,20 @@ class EmailService
    */
   protected string $emailTo;
 
+  /**
+   * @var string
+   */
+  protected string $emailFrom;
+
+
   public function __construct(
     MailerInterface  $mailer,
-    #[Autowire(value: '%env(string:EMAIL_TO)%')] string $emailTo
+    #[Autowire(value: '%env(string:EMAIL_TO)%')] string $emailTo,
+    #[Autowire(value: '%env(string:EMAIL_FROM)%')] string $emailFrom,
   ) {
-    $this->mailer = $mailer;
-    $this->emailTo = $emailTo;
+    $this->mailer    = $mailer;
+    $this->emailTo   = $emailTo;
+    $this->emailFrom = $emailFrom;
   }
 
   /**
@@ -40,18 +48,23 @@ class EmailService
    * @return void
    */
   public function sendMail(Contact $contact) : void{
-
-  // $toEmail = getenv('EMAIL_TO');
-   $message = nl2br($contact->getMessage());
+    // Create an array of contact information.
+    $data = [
+      'firstname' => $contact->getFirstname(),
+      'lastname'  => $contact->getLastname(),
+      'phone'     => $contact->getPhone(),
+      'email'     => $contact->getEmail(),
+      'message'   => nl2br($contact->getMessage()),
+    ];
 
    try{
       $emailObject = (new TemplatedEmail())
-        ->from($contact->getEmail())
+        ->from($this->emailFrom)
         ->to($this->emailTo)
-        ->subject('Contact submission')
+        ->subject('Nouveau message depuis caroline-chapeau.com')
         ->htmlTemplate('email/contact.html.twig')
         ->context([
-          'contact' => $contact
+          'contact' => $data,
         ]);
 
       $this->mailer->send($emailObject);
