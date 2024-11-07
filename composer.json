@@ -12,7 +12,6 @@
         "doctrine/doctrine-fixtures-bundle": "^3.6",
         "doctrine/doctrine-migrations-bundle": "^3.3",
         "doctrine/orm": "^3.1",
-        "karser/karser-recaptcha3-bundle": "^0.1.27",
         "lexik/jwt-authentication-bundle": "^3.1",
         "nelmio/cors-bundle": "^2.5",
         "odolbeau/phone-number-bundle": "^3.10",
