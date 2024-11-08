@@ -8,7 +8,6 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
-use function getenv;
 
 /**
  * Class EmailService.
@@ -47,7 +46,8 @@ class EmailService
    * @throws \Exception If an error occurs during email sending.
    * @return void
    */
-  public function sendMail(Contact $contact) : void{
+  public function sendMail(Contact $contact) : void
+  {
     // Create an array of contact information.
     $data = [
       'firstname' => $contact->getFirstname(),
@@ -57,7 +57,7 @@ class EmailService
       'message'   => nl2br($contact->getMessage()),
     ];
 
-   try{
+   try {
       $emailObject = (new TemplatedEmail())
         ->from($this->emailFrom)
         ->to($this->emailTo)
@@ -75,5 +75,4 @@ class EmailService
     }
 
   }
-
 }
