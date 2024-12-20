@@ -12,6 +12,7 @@ This is the API project for my Vue.js portfolio application. It uses PHP and the
 
 - API Platform integration: Utilizes API Platform for building APIs.
 - Security : Implements JWT authentication for secure access and password.
+- Fixtures : Implements fixture to create a user admin.
 - User Management: Provides user entities with role-based access control and password management.
 
 ## Installation
