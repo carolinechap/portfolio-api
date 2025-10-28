@@ -13,14 +13,27 @@ class IndexController extends AbstractController
   /** @var string */
   protected $frontUrl;
 
-  public function __construct(#[Autowire(value: '%env(string:FRONT_URL)%')] string $frontUrl)
+  /** @var string */
+  protected $env;
+
+  public function __construct(
+    #[Autowire(value: '%env(string:FRONT_URL)%')] string $frontUrl,
+    #[Autowire(value: '%env(string:APP_ENV)%')] string $env,
+  )
   {
     $this->frontUrl = $frontUrl;
+    $this->env      = $env;
   }
 
   #[Route('/', name: 'app_index')]
     public function index(): Response
     {
-      return $this->redirect($this->frontUrl);
+
+      if($this->env!== 'dev'){
+        return $this->redirect($this->frontUrl);
+      }
+
+      return $this->redirect('/_profiler');
+
     }
 }
