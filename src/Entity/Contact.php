@@ -10,7 +10,7 @@ use App\Attributes\CustomMapping;
 use App\DataTransformer\PhoneDataTransformer;
 use App\Repository\ContactRepository;
 use App\State\ContactProcessor;
-use App\Validator\ReCaptchaConstraint;
+use App\Validator\HCaptchaConstraint;
 use App\Validator\UserValidationGroupsGenerator;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -72,7 +72,7 @@ class Contact
 
   #[Groups(['contact:write'])]
   #[
-    ReCaptchaConstraint
+    HCaptchaConstraint
   ]
   private string $token;
 
