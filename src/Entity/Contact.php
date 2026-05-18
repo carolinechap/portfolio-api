@@ -4,20 +4,18 @@ namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
-use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\Post;
-use App\Attributes\CustomMapping;
-use App\DataTransformer\PhoneDataTransformer;
 use App\Repository\ContactRepository;
 use App\State\ContactProcessor;
 use App\Validator\HCaptchaConstraint;
-use App\Validator\UserValidationGroupsGenerator;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use libphonenumber\NumberParseException;
 use libphonenumber\PhoneNumber;
 use libphonenumber\PhoneNumberUtil;
+use Misd\PhoneNumberBundle\Validator\Constraints\PhoneNumber as AssertPhoneNumber;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Validator\Constraints\Email;
 use Symfony\Component\Validator\Constraints\NotBlank;
 
@@ -42,12 +40,12 @@ class Contact
   #[ORM\Column(type: Types::STRING, length: 50)]
   #[NotBlank(message: 'error.field.not_blank')]
   #[Groups(['contact:read', 'contact:write'])]
-  private ?string $firstname = null;
+  private string $firstname;
 
   #[ORM\Column(type: Types::STRING, length: 50)]
   #[NotBlank(message: 'error.field.not_blank')]
   #[Groups(['contact:read', 'contact:write'])]
-  private ?string $lastname = null;
+  private string $lastname;
 
   #[ORM\Column(type: 'phone_number', nullable: true)]
   #[
@@ -63,12 +61,12 @@ class Contact
     Email(message: 'error.field.format', mode: Email::VALIDATION_MODE_STRICT)
   ]
   #[Groups(['contact:read', 'contact:write'])]
-  private ?string $email = null;
+  private string $email;
 
   #[ORM\Column(type: Types::TEXT)]
   #[NotBlank(message: 'error.field.not_blank')]
   #[Groups(['contact:read', 'contact:write'])]
-  private ?string $message = null;
+  private string $message;
 
   #[Groups(['contact:write'])]
   #[
@@ -84,10 +82,7 @@ class Contact
     return $this->id;
   }
 
-  /**
-   * @return string
-   */
-  public function getFirstname(): ?string
+  public function getFirstname(): string
   {
     return $this->firstname;
   }
@@ -104,10 +99,7 @@ class Contact
     return $this;
   }
 
-  /**
-   * @return string
-   */
-  public function getLastname(): ?string
+  public function getLastname(): string
   {
     return $this->lastname;
   }
@@ -140,11 +132,22 @@ class Contact
   public function setPhone(PhoneNumber|string|null $phone): Contact
   {
     if (is_string($phone)) {
-      try {
-        /** @var PhoneNumber $phone */
-        $phone = PhoneNumberUtil::getInstance()->parse($phone);
-      } catch (NumberParseException) {
+      if ('' === $phone) {
         $phone = null;
+      } else {
+        try {
+          $phone = PhoneNumberUtil::getInstance()->parse($phone);
+        } catch (NumberParseException $e) {
+          throw NotNormalizableValueException::createForUnexpectedDataType(
+            'error.field.format',
+            $phone,
+            [PhoneNumber::class],
+            'phone',
+            true,
+            0,
+            $e,
+          );
+        }
       }
     }
 
@@ -153,10 +156,7 @@ class Contact
     return $this;
   }
 
-  /**
-   * @inheritDoc
-   */
-  public function getEmail(): ?string
+  public function getEmail(): string
   {
     return $this->email;
   }
@@ -173,10 +173,7 @@ class Contact
     return $this;
   }
 
-  /**
-   * @inheritDoc
-   */
-  public function getMessage(): ?string
+  public function getMessage(): string
   {
     return $this->message;
   }
@@ -193,19 +190,13 @@ class Contact
     return $this;
   }
 
-  /**
-   * @inheritDoc
-   */
   public function getToken(): string {
     return $this->token;
   }
 
-  /**
-   * @param string $token
-   *
-   * @return Contact
-   */
-  public function setToken(string $token): void {
+  public function setToken(string $token): Contact {
     $this->token = $token;
+
+    return $this;
   }
 }

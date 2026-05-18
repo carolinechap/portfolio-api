@@ -12,6 +12,7 @@ api_platform:
         html: ['text/html']
     defaults:
         stateless: true
+        collect_denormalization_errors: true
         cache_headers:
             max_age: 0
             shared_max_age: 0
@@ -24,5 +25,3 @@ api_platform:
             JWT:
                 name: Authorization
                 type: header
-    event_listeners_backward_compatibility_layer: false
-    keep_legacy_inflector: false
