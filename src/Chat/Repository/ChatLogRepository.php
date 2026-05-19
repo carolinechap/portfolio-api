@@ -20,11 +20,13 @@ class ChatLogRepository extends ServiceEntityRepository
 
     public function deleteOlderThan(\DateTimeImmutable $threshold): int
     {
-        return (int) $this->createQueryBuilder('l')
+        $affected = $this->createQueryBuilder('l')
             ->delete()
             ->where('l.createdAt < :threshold')
             ->setParameter('threshold', $threshold)
             ->getQuery()
             ->execute();
+
+        return is_int($affected) ? $affected : 0;
     }
 }

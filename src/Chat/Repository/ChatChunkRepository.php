@@ -32,16 +32,17 @@ class ChatChunkRepository extends ServiceEntityRepository
     /** @param string[] $sourceKeys */
     public function deleteNotIn(array $sourceKeys): int
     {
-        if ($sourceKeys === []) {
-            return (int) $this->createQueryBuilder('c')->delete()->getQuery()->execute();
+        $qb = $this->createQueryBuilder('c')->delete();
+
+        if ($sourceKeys !== []) {
+            $qb
+                ->where('c.sourceKey NOT IN (:keys)')
+                ->setParameter('keys', $sourceKeys);
         }
 
-        return (int) $this->createQueryBuilder('c')
-            ->delete()
-            ->where('c.sourceKey NOT IN (:keys)')
-            ->setParameter('keys', $sourceKeys)
-            ->getQuery()
-            ->execute();
+        $affected = $qb->getQuery()->execute();
+
+        return is_int($affected) ? $affected : 0;
     }
 
     /**
