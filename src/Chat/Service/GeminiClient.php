@@ -79,9 +79,24 @@ class GeminiClient
                     } catch (\JsonException) {
                         continue;
                     }
-                    foreach ($event['candidates'] ?? [] as $candidate) {
-                        foreach ($candidate['content']['parts'] ?? [] as $part) {
-                            if (isset($part['text']) && is_string($part['text'])) {
+                    if (!is_array($event)) {
+                        continue;
+                    }
+                    $candidates = $event['candidates'] ?? null;
+                    if (!is_array($candidates)) {
+                        continue;
+                    }
+                    foreach ($candidates as $candidate) {
+                        if (!is_array($candidate)) {
+                            continue;
+                        }
+                        $content = $candidate['content'] ?? null;
+                        $parts = is_array($content) ? ($content['parts'] ?? null) : null;
+                        if (!is_array($parts)) {
+                            continue;
+                        }
+                        foreach ($parts as $part) {
+                            if (is_array($part) && isset($part['text']) && is_string($part['text'])) {
                                 yield $part['text'];
                             }
                         }

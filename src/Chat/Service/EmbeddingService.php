@@ -89,22 +89,40 @@ class EmbeddingService
 
         $embeddings = $data['embeddings'] ?? null;
         if (!is_array($embeddings)) {
-            $single = $data['embedding']['values'] ?? null;
-            if (is_array($single)) {
-                return [array_map('floatval', $single)];
+            $embedding = $data['embedding'] ?? null;
+            if (is_array($embedding) && isset($embedding['values']) && is_array($embedding['values'])) {
+                return [self::toFloatVector($embedding['values'])];
             }
             throw new GeminiException('Unexpected Gemini embeddings response shape');
         }
 
         return array_map(
-            static function (array $e): array {
-                $values = $e['values'] ?? null;
-                if (!is_array($values)) {
+            static function (mixed $entry): array {
+                if (!is_array($entry) || !isset($entry['values']) || !is_array($entry['values'])) {
                     throw new GeminiException('Missing values in embedding entry');
                 }
-                return array_map('floatval', $values);
+
+                return self::toFloatVector($entry['values']);
             },
             $embeddings,
+        );
+    }
+
+    /**
+     * @param  array<mixed> $values
+     * @return float[]
+     */
+    private static function toFloatVector(array $values): array
+    {
+        return array_map(
+            static function (mixed $v): float {
+                if (!is_int($v) && !is_float($v)) {
+                    throw new GeminiException('Embedding vector contains a non-numeric value');
+                }
+
+                return (float) $v;
+            },
+            $values,
         );
     }
 }
