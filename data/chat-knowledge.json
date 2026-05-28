@@ -1,0 +1,28 @@
+{
+  "entries": [
+    {
+      "key": "experience.arneo-2024",
+      "type": "experience",
+      "content": "Depuis 2024, je travaille chez Arneo, agence digitale lyonnaise, en tant que développeuse back sur des projets Symfony et Drupal.",
+      "tags": ["symfony", "drupal", "arneo"]
+    },
+    {
+      "key": "skill.symfony",
+      "type": "skill",
+      "content": "Symfony 5, 6, 7 — API Platform, Doctrine ORM, Messenger, Security, Mailer.",
+      "tags": ["symfony", "php"]
+    },
+    {
+      "key": "skill.drupal",
+      "type": "skill",
+      "content": "Drupal 9, 10, 11 — modules custom, hooks, services, migrations, configuration management.",
+      "tags": ["drupal", "php"]
+    },
+    {
+      "key": "contact",
+      "type": "contact",
+      "content": "Pour me contacter, utilise le formulaire sur caroline-chapeau.com ou écris-moi à contact@caroline-chapeau.com.",
+      "tags": ["contact"]
+    }
+  ]
+}

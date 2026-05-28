@@ -26,6 +26,7 @@ final class ChatChunkRepositoryTest extends KernelTestCase
         $tool->createSchema($metas);
 
         $this->repo = $container->get(ChatChunkRepository::class);
+        $this->repo->invalidateCache();
 
         $em->persist(new ChatChunk('a', 'A', hash('sha256', 'A'), [1.0, 0.0, 0.0]));
         $em->persist(new ChatChunk('b', 'B', hash('sha256', 'B'), [0.0, 1.0, 0.0]));
@@ -55,6 +56,7 @@ final class ChatChunkRepositoryTest extends KernelTestCase
             $em->remove($c);
         }
         $em->flush();
+        $this->repo->invalidateCache();
 
         self::assertSame([], $this->repo->findTopK([1.0, 0.0, 0.0], 5));
     }
