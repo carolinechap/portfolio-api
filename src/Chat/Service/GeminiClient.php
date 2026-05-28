@@ -10,6 +10,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
+/**
+ * Thin client over the Gemini streamGenerateContent endpoint, exposing the
+ * model output as a stream of text tokens via a {@see \Generator}.
+ */
 class GeminiClient
 {
     public function __construct(
@@ -24,7 +28,29 @@ class GeminiClient
     ) {
     }
 
-    /** @return \Generator<int, string> */
+    /**
+     * Streams the model output, yielding each text fragment as soon as it
+     * arrives over the Server-Sent Events channel.
+     *
+     * Malformed SSE lines, partial JSON or unexpected event shapes are
+     * silently skipped — only well-formed `candidates[].content.parts[].text`
+     * strings are yielded.
+     *
+     * Gemini safety filters are applied at the `BLOCK_LOW_AND_ABOVE` threshold
+     * for hate speech, harassment, sexually explicit and dangerous content
+     * categories, so any candidate matching one of those buckets is dropped
+     * upstream by the API.
+     *
+     * `generationConfig.maxOutputTokens` is hard-capped at 200 tokens, which
+     * is coherent with the "1-3 phrases" instruction enforced by the system
+     * prompt and prevents runaway generations from inflating the audit log
+     * or the Gemini bill.
+     *
+     * @return \Generator<int, string> Sequence of text fragments forming the assistant response
+     *
+     * @throws QuotaExceededException When the daily Gemini quota is exhausted or the API returns 429
+     * @throws GeminiException        On transport errors or HTTP status >= 400 (other than 429)
+     */
     public function streamGenerate(string $prompt): \Generator
     {
         if (!$this->quotaGuard->canCall()) {
@@ -47,6 +73,15 @@ class GeminiClient
                 ],
                 'json' => [
                     'contents' => [['parts' => [['text' => $prompt]]]],
+                    'safetySettings' => [
+                        ['category' => 'HARM_CATEGORY_HATE_SPEECH',       'threshold' => 'BLOCK_LOW_AND_ABOVE'],
+                        ['category' => 'HARM_CATEGORY_HARASSMENT',        'threshold' => 'BLOCK_LOW_AND_ABOVE'],
+                        ['category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold' => 'BLOCK_LOW_AND_ABOVE'],
+                        ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_LOW_AND_ABOVE'],
+                    ],
+                    'generationConfig' => [
+                        'maxOutputTokens' => 200,
+                    ],
                 ],
                 'timeout' => 60,
                 'buffer'  => false,

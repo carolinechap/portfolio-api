@@ -10,8 +10,16 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
+/**
+ * Thin client over the Gemini batchEmbedContents endpoint.
+ *
+ * Always asks the model for {@see self::OUTPUT_DIM}-dimensional vectors
+ * (Matryoshka-truncated) and routes every call through {@see QuotaGuard}.
+ */
 class EmbeddingService
 {
+    private const int OUTPUT_DIM = 768;
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly QuotaGuard $quotaGuard,
@@ -24,7 +32,14 @@ class EmbeddingService
     ) {
     }
 
-    /** @return float[] */
+    /**
+     * Embeds a single text via the Gemini batchEmbedContents endpoint.
+     *
+     * @return float[] Vector of 768 floats (Matryoshka-truncated output)
+     *
+     * @throws QuotaExceededException When the daily Gemini quota is exhausted or the API returns 429
+     * @throws GeminiException        On transport errors or unexpected response shape
+     */
     public function embed(string $text): array
     {
         $vectors = $this->call([$text]);
@@ -33,8 +48,15 @@ class EmbeddingService
     }
 
     /**
-     * @param  string[] $texts
-     * @return float[][]
+     * Embeds a batch of texts in a single API call.
+     *
+     * Returns an empty array when $texts is empty (no API call is made).
+     *
+     * @param  string[]  $texts
+     * @return float[][] One vector per input text, in the same order
+     *
+     * @throws QuotaExceededException When the daily Gemini quota is exhausted or the API returns 429
+     * @throws GeminiException        On transport errors or unexpected response shape
      */
     public function embedBatch(array $texts): array
     {
@@ -46,8 +68,13 @@ class EmbeddingService
     }
 
     /**
-     * @param  string[] $texts
-     * @return float[][]
+     * Performs the actual HTTP call to the Gemini batchEmbedContents endpoint.
+     *
+     * @param  string[]  $texts
+     * @return float[][] One vector per input text
+     *
+     * @throws QuotaExceededException When the daily quota is exhausted or the API returns 429
+     * @throws GeminiException        On transport errors or unexpected response shape
      */
     private function call(array $texts): array
     {
@@ -63,6 +90,7 @@ class EmbeddingService
                 fn (string $t): array => [
                     'model' => 'models/' . $this->model,
                     'content' => ['parts' => [['text' => $t]]],
+                    'outputDimensionality' => self::OUTPUT_DIM,
                 ],
                 $texts,
             ),
@@ -109,8 +137,13 @@ class EmbeddingService
     }
 
     /**
-     * @param  array<mixed> $values
+     * Coerces a decoded JSON array to a plain float vector, failing loudly on
+     * any non-numeric entry.
+     *
+     * @param  array<mixed> $values Raw "values" array returned by Gemini
      * @return float[]
+     *
+     * @throws GeminiException When any element is not int or float
      */
     private static function toFloatVector(array $values): array
     {
