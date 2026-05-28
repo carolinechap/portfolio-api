@@ -1,0 +1,17 @@
+nelmio_security:
+    clickjacking:
+        paths:
+            '^/.*': DENY
+    content_type:
+        nosniff: true
+    referrer_policy:
+        enabled: true
+        policies:
+            - 'strict-origin-when-cross-origin'
+
+when@prod:
+    nelmio_security:
+        forced_ssl:
+            enabled: true
+            hsts_max_age: 31536000
+            hsts_subdomains: true

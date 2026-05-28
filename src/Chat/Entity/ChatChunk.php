@@ -8,6 +8,10 @@ use App\Chat\Repository\ChatChunkRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
+/**
+ * Persisted knowledge-base entry with its precomputed embedding, used by the
+ * retrieval step of the chat pipeline.
+ */
 #[ORM\Entity(repositoryClass: ChatChunkRepository::class)]
 #[ORM\Table(name: 'chat_chunk')]
 #[ORM\Index(columns: ['content_hash'], name: 'idx_content_hash')]
@@ -42,8 +46,8 @@ class ChatChunk
     private \DateTimeImmutable $updatedAt;
 
     /**
-     * @param float[]                   $embedding
-     * @param array<string, mixed>|null $metadata
+     * @param float[]                   $embedding Vector produced by the embedding model (typically 768 floats)
+     * @param array<string, mixed>|null $metadata  Free-form metadata (e.g. type, tags) attached to the chunk
      */
     public function __construct(
         string $sourceKey,
@@ -82,21 +86,23 @@ class ChatChunk
         return $this->contentHash;
     }
 
-    /** @return float[] */
+    /** @return float[] Vector stored alongside the chunk */
     public function getEmbedding(): array
     {
         return $this->embedding;
     }
 
-    /** @return array<string, mixed>|null */
+    /** @return array<string, mixed>|null Metadata, or null if none was attached */
     public function getMetadata(): ?array
     {
         return $this->metadata;
     }
 
     /**
-     * @param float[]                   $embedding
-     * @param array<string, mixed>|null $metadata
+     * Replaces the content, hash, embedding and metadata, and refreshes the updated-at timestamp.
+     *
+     * @param float[]                   $embedding New embedding for the updated content
+     * @param array<string, mixed>|null $metadata  New metadata (pass null to clear)
      */
     public function update(string $content, string $contentHash, array $embedding, ?array $metadata): void
     {

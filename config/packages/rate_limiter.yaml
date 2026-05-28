@@ -1,0 +1,6 @@
+framework:
+    rate_limiter:
+        chat_per_ip:
+            policy: 'sliding_window'
+            limit: 60
+            interval: '1 hour'

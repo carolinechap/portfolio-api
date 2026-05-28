@@ -18,6 +18,11 @@ class ChatLogRepository extends ServiceEntityRepository
         parent::__construct($registry, ChatLog::class);
     }
 
+    /**
+     * Deletes every log strictly older than the given threshold.
+     *
+     * @return int Number of rows deleted
+     */
     public function deleteOlderThan(\DateTimeImmutable $threshold): int
     {
         $affected = $this->createQueryBuilder('l')

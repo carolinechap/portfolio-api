@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Chat\Entity;
 
+/**
+ * Final state of a chat request, persisted on every ChatLog row and emitted
+ * to the client as the SSE "done" event payload.
+ */
 enum ChatOutcome: string
 {
     case Answered = 'answered';

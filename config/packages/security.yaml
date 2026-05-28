@@ -27,6 +27,7 @@ security:
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
         - { path: ^/api/login, roles: PUBLIC_ACCESS, methods: [ POST ]  }
         - { path: ^/api/contacts, roles: IS_AUTHENTICATED_FULLY, methods: [ POST ] }
+        - { path: ^/api/chat$, roles: PUBLIC_ACCESS, methods: [ POST ] }
 
 when@test:
     security:

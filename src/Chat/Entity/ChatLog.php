@@ -8,6 +8,11 @@ use App\Chat\Repository\ChatLogRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
+/**
+ * Audit record persisted for every chat request, capturing the question, the
+ * produced answer, the retrieval top score, the source chunks used, and the
+ * final {@see ChatOutcome}.
+ */
 #[ORM\Entity(repositoryClass: ChatLogRepository::class)]
 #[ORM\Table(name: 'chat_log')]
 #[ORM\Index(columns: ['created_at'], name: 'idx_created_at')]
@@ -37,7 +42,9 @@ class ChatLog
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
-    /** @param string[]|null $chunksUsed */
+    /**
+     * @param string[]|null $chunksUsed Source keys of the chunks that were used to answer, or null when retrieval was not run
+     */
     public function __construct(
         string $question,
         string $answer,
