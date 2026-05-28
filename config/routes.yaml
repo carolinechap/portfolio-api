@@ -1,3 +1,8 @@
 auth:
     path: /api/login_check
     methods: ['POST']
+
+chat:
+    path: /api/chat
+    controller: App\Chat\Controller\ChatController
+    methods: ['POST']

@@ -22,3 +22,21 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+    # Chat controller invoked directly from routes.yaml — must be tagged
+    # so the resolver can fetch it from the container.
+    App\Chat\Controller\ChatController:
+        tags: ['controller.service_arguments']
+
+    # External services that are stubbed in tests via
+    # `self::getContainer()->set(...)`. Marked public to prevent the
+    # container from inlining single-use private services, which would
+    # otherwise hide them from the test private services locator.
+    App\Chat\Service\HCaptchaVerifier:
+        public: true
+    App\Chat\Service\EmbeddingService:
+        public: true
+    App\Chat\Service\GeminiClient:
+        public: true
+    App\Chat\Service\KnowledgeIngester:
+        public: true
