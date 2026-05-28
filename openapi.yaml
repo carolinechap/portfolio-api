@@ -1,0 +1,258 @@
+openapi: 3.1.0
+info:
+  title: Portfolio Chat API
+  version: "1.0.0"
+  description: |
+    Endpoint public du chatbot RAG du portfolio de Caroline Chapeau.
+    Pipeline : hCaptcha → rate-limit IP → validation DTO → embedding Gemini →
+    retrieval cosinus → génération Gemini en streaming.
+
+    La réponse `200` est un flux **Server-Sent Events** (`text/event-stream`)
+    qui ne peut pas être pleinement typé en OpenAPI. La grammaire est :
+
+    ```
+    event: chunk
+    data: {"token": "..."}
+
+    event: done
+    data: {"outcome": "answered" | "off_scope"}
+
+    event: error
+    data: {"reason": "quota_exceeded" | "internal_error", "message": "..."}
+    ```
+
+    Voir `docs/chatbot/README.md` pour l'intégration complète.
+
+servers:
+  - url: https://api.example.com
+    description: Production (remplacer par l'URL réelle de prod)
+  - url: http://localhost:8000
+    description: Dev local (`symfony serve`)
+
+paths:
+  /api/chat:
+    post:
+      operationId: chat
+      summary: Envoie une question au chatbot et reçoit la réponse en SSE
+      description: |
+        Endpoint stateless. Aucune authentification JWT. La sécurité repose sur :
+        - Origin header (doit matcher `FRONT_URL` côté back)
+        - hCaptcha (header `X-HCaptcha-Token`, single-use)
+        - Rate-limit sliding window 60 req/h/IP
+        - Honeypot `website` (doit rester vide)
+      parameters:
+        - in: header
+          name: X-HCaptcha-Token
+          required: true
+          description: Token hCaptcha fraîchement généré via `hcaptcha.execute()`.
+          schema:
+            type: string
+            minLength: 1
+        - in: header
+          name: Origin
+          required: true
+          description: |
+            Renseigné automatiquement par le navigateur. Doit être strictement
+            égal à la variable `FRONT_URL` côté back (sinon `403`).
+          schema:
+            type: string
+            format: uri
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+            examples:
+              first_turn:
+                summary: Première question
+                value:
+                  question: "Quelles sont les expériences pro de Caroline ?"
+                  history: []
+                  website: ""
+              follow_up:
+                summary: Question de suivi avec historique
+                value:
+                  question: "Et en termes de stack technique ?"
+                  history:
+                    - role: user
+                      content: "Quelles sont les expériences pro de Caroline ?"
+                    - role: assistant
+                      content: "Caroline a travaillé chez Arneo depuis 2021..."
+                  website: ""
+      responses:
+        "200":
+          description: |
+            Le stream SSE démarre. Voir la description du endpoint pour la
+            grammaire complète. Le `Content-Type` est `text/event-stream`,
+            `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: text/event-stream
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Séquence d'events SSE. Chaque event est composé de lignes
+                  `event:` / `data:` séparées par `\n\n`. Voir
+                  `#/components/schemas/SseChunkEvent`, `SseDoneEvent`,
+                  `SseErrorEvent` pour le format de chaque `data:`.
+              examples:
+                answered:
+                  summary: Réponse complète
+                  value: |
+                    event: chunk
+                    data: {"token":"Caroline"}
+
+                    event: chunk
+                    data: {"token":" est"}
+
+                    event: chunk
+                    data: {"token":" développeuse."}
+
+                    event: done
+                    data: {"outcome":"answered"}
+                off_scope:
+                  summary: Question hors sujet
+                  value: |
+                    event: chunk
+                    data: {"token":"Désolée, je ne sais pas répondre à ça. Je suis l'assistant de Caroline Chapeau."}
+
+                    event: done
+                    data: {"outcome":"off_scope"}
+                quota_exceeded:
+                  summary: Quota Gemini épuisé
+                  value: |
+                    event: error
+                    data: {"reason":"quota_exceeded","message":"L'assistant est très sollicité aujourd'hui et n'est plus disponible. Réessaie demain ou utilise le formulaire de contact."}
+        "400":
+          description: Payload JSON invalide ou validation DTO échouée.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalid_payload:
+                  value:
+                    error: invalid payload
+                validation_failed:
+                  value:
+                    error: validation failed
+        "403":
+          description: |
+            `Origin` ne matche pas `FRONT_URL` **ou** hCaptcha invalide.
+            Réponse texte Symfony standard.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Origin not allowed
+        "429":
+          description: Rate-limit IP dépassé (60 req/h sliding window).
+          headers:
+            Retry-After:
+              description: Secondes avant la prochaine fenêtre.
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Rate limit exceeded
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: |
+            Question utilisateur. Caractères Unicode autorisés
+            (`\p{L}\p{N}\p{P}\p{Z}\p{S}`). Patterns d'injection
+            (`ignore previous instructions`, `reveal your system prompt`, etc.)
+            rejetés en validation.
+          example: "Quelles sont les compétences techniques de Caroline ?"
+        history:
+          type: array
+          maxItems: 6
+          description: |
+            Historique récent de la conversation (max 6 entrées = 3 paires
+            user/assistant). Le back tronque encore davantage côté prompt.
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+          default: []
+        website:
+          type: string
+          description: |
+            Champ honeypot. **Doit rester vide.** Ne jamais l'afficher ni le
+            pré-remplir côté front — les bots qui le remplissent sont rejetés
+            en `400`.
+          enum: [""]
+          default: ""
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    SseChunkEvent:
+      type: object
+      description: Payload `data:` d'un event `chunk` SSE.
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Fragment de texte de la réponse (à concaténer).
+
+    SseDoneEvent:
+      type: object
+      description: Payload `data:` de l'event terminal `done` SSE.
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [answered, off_scope]
+          description: |
+            - `answered` : réponse complète streamée
+            - `off_scope` : question hors sujet, un chunk court a été émis avant
+
+    SseErrorEvent:
+      type: object
+      description: |
+        Payload `data:` de l'event `error` SSE. Le stream se termine ici
+        (pas de `done` ensuite).
+      required: [reason, message]
+      properties:
+        reason:
+          type: string
+          enum: [quota_exceeded, internal_error]
+        message:
+          type: string
+          description: Message FR prêt à afficher côté UI.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [invalid payload, validation failed]
