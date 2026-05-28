@@ -19,6 +19,12 @@ class HCaptchaVerifier
   ) {
   }
 
+  /**
+   * Verifies an hCaptcha token against the hCaptcha siteverify endpoint.
+   *
+   * Returns false for null/empty tokens, HTTP errors, or JSON decoding failures
+   * — the caller treats any failure as an invalid token.
+   */
   public function verify(?string $token): bool
   {
     if ($token === null || $token === '') {

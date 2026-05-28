@@ -8,6 +8,11 @@ use App\Chat\Dto\ChatMessage;
 use App\Chat\Entity\ChatChunk;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
+/**
+ * Assembles the final Gemini prompt by concatenating the system prompt, the
+ * retrieved context chunks, the (trimmed) conversation history and the
+ * current user question.
+ */
 final readonly class PromptBuilder
 {
     private const int ANSWER_TRUNCATE_CHARS = 200;
@@ -21,8 +26,14 @@ final readonly class PromptBuilder
     }
 
     /**
-     * @param ChatChunk[]   $chunks
-     * @param ChatMessage[] $history
+     * Builds the full prompt sent to the generation model.
+     *
+     * Assistant turns in the history are truncated to keep the prompt short;
+     * the history itself is trimmed to the last $historyMaxPairs exchanges.
+     *
+     * @param ChatChunk[]   $chunks   Retrieved context chunks (in display order)
+     * @param ChatMessage[] $history  Conversation history, oldest-first
+     * @param string        $question Current user question
      */
     public function build(array $chunks, array $history, string $question): string
     {
@@ -50,6 +61,8 @@ final readonly class PromptBuilder
     }
 
     /**
+     * Keeps only the last $historyMaxPairs user/assistant pairs (i.e. 2× messages).
+     *
      * @param  ChatMessage[] $history
      * @return ChatMessage[]
      */
@@ -60,6 +73,9 @@ final readonly class PromptBuilder
         return array_slice($history, -$maxMessages);
     }
 
+    /**
+     * Multibyte-safe truncation that appends an ellipsis when the string is cut.
+     */
     private static function truncate(string $s, int $max): string
     {
         if (mb_strlen($s) <= $max) {
