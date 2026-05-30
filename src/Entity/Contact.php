@@ -33,6 +33,9 @@ use Symfony\Component\Validator\Constraints\NotBlank;
 )]
 class Contact
 {
+
+  public const string PHONE_DEFAULT_REGION = 'FR';
+
   #[ORM\Id]
   #[ORM\GeneratedValue]
   #[ORM\Column]
@@ -49,7 +52,7 @@ class Contact
 
   #[ORM\Column(type: 'phone_number', nullable: true)]
   #[
-    AssertPhoneNumber(type: AssertPhoneNumber::ANY, message: 'error.field.format')
+    AssertPhoneNumber(type: AssertPhoneNumber::ANY, defaultRegion: self::PHONE_DEFAULT_REGION, message: 'error.field.format')
   ]
   #[ApiProperty(openapiContext: ['type' => 'string'])]
   #[Groups(['contact:read', 'contact:write'])]
@@ -67,6 +70,14 @@ class Contact
   #[NotBlank(message: 'error.field.not_blank')]
   #[Groups(['contact:read', 'contact:write'])]
   private string $message;
+
+  #[ORM\Column(type: Types::STRING, length: 100, nullable: true)]
+  #[Groups(['contact:read', 'contact:write'])]
+  private ?string $company = null;
+
+  #[ORM\Column(type: Types::STRING, length: 100, nullable: true)]
+  #[Groups(['contact:read', 'contact:write'])]
+  private ?string $opportunity = null;
 
   #[Groups(['contact:write'])]
   #[
@@ -132,11 +143,25 @@ class Contact
   public function setPhone(PhoneNumber|string|null $phone): Contact
   {
     if (is_string($phone)) {
+      $phone = trim($phone);
       if ('' === $phone) {
         $phone = null;
       } else {
+        // Le préfixe international (« + ») est obligatoire : le front l'envoie
+        // toujours (FR « +33 » par défaut). Sans préfixe, on rejette.
+        if (!str_starts_with($phone, '+')) {
+          throw NotNormalizableValueException::createForUnexpectedDataType(
+            'error.field.format',
+            $phone,
+            [PhoneNumber::class],
+            'phone',
+            true,
+            0,
+          );
+        }
+
         try {
-          $phone = PhoneNumberUtil::getInstance()->parse($phone);
+          $phone = PhoneNumberUtil::getInstance()->parse($phone, self::PHONE_DEFAULT_REGION);
         } catch (NumberParseException $e) {
           throw NotNormalizableValueException::createForUnexpectedDataType(
             'error.field.format',
@@ -186,6 +211,46 @@ class Contact
   public function setMessage(string $message): Contact
   {
     $this->message = $message;
+
+    return $this;
+  }
+
+  /**
+   * @return string|null
+   */
+  public function getCompany(): ?string
+  {
+    return $this->company;
+  }
+
+  /**
+   * @param string|null $company
+   *
+   * @return Contact
+   */
+  public function setCompany(?string $company): Contact
+  {
+    $this->company = $company;
+
+    return $this;
+  }
+
+  /**
+   * @return string|null
+   */
+  public function getOpportunity(): ?string
+  {
+    return $this->opportunity;
+  }
+
+  /**
+   * @param string|null $opportunity
+   *
+   * @return Contact
+   */
+  public function setOpportunity(?string $opportunity): Contact
+  {
+    $this->opportunity = $opportunity;
 
     return $this;
   }
