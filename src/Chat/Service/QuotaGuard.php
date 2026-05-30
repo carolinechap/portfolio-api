@@ -91,10 +91,14 @@ final class QuotaGuard
     }
 
     /**
-     * Builds the cache key for the current day, e.g. "gemini_quota:2025-12-31".
+     * Builds the cache key for the current day, e.g. "gemini_quota.2025-12-31".
+     *
+     * Uses "." rather than ":" as the separator: ":" is a PSR-6 reserved
+     * character ({}()/\@:) and validating pools (e.g. the real cache.app
+     * FilesystemAdapter) reject it.
      */
     private function key(): string
     {
-        return 'gemini_quota:' . $this->now->format('Y-m-d');
+        return 'gemini_quota.' . $this->now->format('Y-m-d');
     }
 }
