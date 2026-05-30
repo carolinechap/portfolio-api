@@ -65,6 +65,11 @@ class ChatLog
         return $this->id;
     }
 
+    public function getQuestion(): string
+    {
+        return $this->question;
+    }
+
     public function getOutcome(): ChatOutcome
     {
         return $this->outcome;

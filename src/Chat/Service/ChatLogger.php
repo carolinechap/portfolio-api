@@ -16,6 +16,15 @@ final readonly class ChatLogger
     private const int ANSWER_MAX_CHARS = 5000;
 
     /**
+     * Hard cap on the stored question, matching the `chat_log.question`
+     * column length ({@see ChatLog} `length: 500`). Without it, logging an
+     * over-length question — e.g. the one that just failed the `Length(max:
+     * 500)` validation — would throw a "Data too long" SQL error and mask the
+     * intended 400 response with a 500.
+     */
+    private const int QUESTION_MAX_CHARS = 500;
+
+    /**
      * PII patterns redacted from both `question` and `answer` before storage.
      *
      * @var list<string>
@@ -61,6 +70,9 @@ final readonly class ChatLogger
      *   5. The persisted answer is truncated to {@see self::ANSWER_MAX_CHARS}
      *      characters to keep the audit table bounded even when the model
      *      produces an unexpectedly long response.
+     *   6. The persisted question is truncated to {@see self::QUESTION_MAX_CHARS}
+     *      characters so logging an over-length question (e.g. one that just
+     *      failed validation) cannot overflow the column.
      *
      * @param string[]|null $chunksUsed Source keys of the retrieved chunks, or null when retrieval was not run
      */
@@ -81,6 +93,10 @@ final readonly class ChatLogger
         $answer = (string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $answer);
 
         $answer = (string) preg_replace(self::API_KEY_PATTERNS, '[REDACTED]', $answer);
+
+        // Final safety net: keep the question within the column length, after
+        // all redaction/stripping (none of which lengthen the string).
+        $question = mb_substr($question, 0, self::QUESTION_MAX_CHARS);
 
         $log = new ChatLog($question, $answer, $topScore, $chunksUsed, $outcome);
         $this->em->persist($log);
