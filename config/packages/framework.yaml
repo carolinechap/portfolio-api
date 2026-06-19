@@ -5,6 +5,15 @@ framework:
     http_method_override: false
     handle_all_throwables: true
 
+    # Behind the production reverse proxy, set SYMFONY_TRUSTED_PROXIES to the
+    # proxy's IP(s) (e.g. "127.0.0.1,REMOTE_ADDR" or the proxy subnet).
+    # WITHOUT this, Request::getClientIp() returns the proxy IP, so the per-IP
+    # rate limiters (chat, contact) all share one bucket — or, if X-Forwarded-For
+    # were trusted blindly, an attacker could spoof their IP and dodge the limit.
+    # Unset (local/dev) it resolves to empty: no proxy is trusted, headers ignored.
+    trusted_proxies: '%env(default::SYMFONY_TRUSTED_PROXIES)%'
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host', 'x-forwarded-port']
+
     # Enables session support. Note that the session will ONLY be started if you read or write from it.
     # Remove or comment this section to explicitly disable session support.
     session:

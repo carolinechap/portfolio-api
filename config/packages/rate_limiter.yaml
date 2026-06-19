@@ -4,3 +4,18 @@ framework:
             policy: 'sliding_window'
             limit: 60
             interval: '1 hour'
+        # Throttles the public contact form per client IP. The contact endpoint
+        # triggers an email on every accepted POST, so this caps mail-bombing /
+        # DoS from a single source even when a captcha token is presented.
+        contact_per_ip:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '1 hour'
+        # Absolute daily ceiling on *accepted* contact submissions, all IPs
+        # combined. Consumed in ContactProcessor AFTER captcha validation, so
+        # invalid/captcha-failing requests can't exhaust it (no self-DoS). Caps
+        # the mailbox blast radius of a distributed captcha-solving campaign.
+        contact_global:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 day'

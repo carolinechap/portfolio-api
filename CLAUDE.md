@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Symfony 7.4 + API Platform 4.3 backend for a Vue.js portfolio site. PHP >= 8.3 (8.4 in use), MySQL 8, Doctrine ORM 3.x, JWT auth via LexikJWTAuthenticationBundle.
+Symfony 7.4 + API Platform 4.3 backend for a Vue.js portfolio site. PHP >= 8.3 (8.4 in use), MySQL 8, Doctrine ORM 3.x. **No authentication layer**: there are no users, no login and no JWT (all removed, along with Symfony's SecurityBundle). The two public endpoints (contact form, chat assistant) are anonymous and protected by anti-abuse controls — hCaptcha, rate limiting, origin checks — not by login. See Security model.
 
 ## Common commands
 
@@ -14,8 +14,6 @@ php bin/console cache:clear                      # clear Symfony cache
 php bin/console doctrine:database:create         # create DB defined in DATABASE_URL
 php bin/console doctrine:migrations:migrate      # apply migrations from migrations/
 php bin/console make:migration                   # generate a migration from entity diff
-php bin/console doctrine:fixtures:load           # load UserFixtures (admin user)
-php bin/console lexik:jwt:generate-keypair       # generate config/jwt/{private,public}.pem
 php bin/console app:chat:ingest                  # ingest data/chat-knowledge.json into chat_chunk (calls Gemini embeddings)
 php bin/console app:chat:purge-logs              # delete chat_log rows older than CHAT_LOG_RETENTION_DAYS
 symfony serve                                    # local dev server (or `php -S 127.0.0.1:8000 -t public`)
@@ -29,19 +27,19 @@ PHPUnit 13 via `symfony/test-pack`. Tests live under `tests/`, using SQLite in-m
 php bin/phpunit                                  # run the whole suite
 php bin/phpunit tests/Chat/                      # only chat tests
 vendor/bin/phpstan analyse                       # static analysis level 10 (configured in phpstan.dist.neon)
+# phpstan reads var/cache/dev/App_KernelDevDebugContainer.xml — run `cache:warmup` first if the dev cache is cold.
+vendor/bin/phpstan analyse src/Entity/Contact.php  # scope analysis to specific files by passing paths
 ```
-
 ## Environment
 
 Required env vars (see `.env` for the full list, set real values in `.env.local`):
 
 - `DATABASE_URL` — MySQL 8 DSN (e.g. `mysql://user:pass@127.0.0.1:3306/db?serverVersion=8.0`).
-- `JWT_SECRET_KEY` / `JWT_PUBLIC_KEY` / `JWT_PASSPHRASE` — generated via `lexik:jwt:generate-keypair`.
-- `USER_ADMIN_EMAIL` / `USER_ADMIN_PASSWORD` — consumed by `UserFixtures` at fixture load time.
 - `EMAIL_TO` / `EMAIL_FROM` — used by `EmailService` for the contact-form notification.
 - `HCAPTCHA_VERIFY_URL` / `HCAPTCHA_SECRET_KEY` — hCaptcha siteverify endpoint and secret. Free plan returns `success` only (no `score`), so the verifier only checks `success`.
 - `CORS_ALLOW_ORIGIN` — regex, defaults to localhost in `.env`.
-- `FRONT_URL` — target of the `/` redirect in non-dev environments (see `IndexController`); also checked by `OriginCheckListener` for `/api/chat`.
+- `FRONT_URL` — target of the `/` redirect in non-dev environments (see `IndexController`); also the allowed `Origin` for `/api/chat` (`OriginCheckListener`) and `/api/contacts` (`ContactGuardListener`).
+- `SYMFONY_TRUSTED_PROXIES` — comma-separated reverse-proxy IP(s)/CIDRs (e.g. `127.0.0.1,REMOTE_ADDR`). **Must be set in production** or the per-IP rate limiters collapse to one shared bucket (see Security model). Empty/unset locally = no proxy trusted.
 - `GEMINI_API_KEY` / `GEMINI_API_BASE_URL` / `GEMINI_EMBEDDING_MODEL` / `GEMINI_GENERATION_MODEL` / `GEMINI_DAILY_LIMIT` — Google Gemini API credentials and tuning (free tier).
 - `CHAT_KNOWLEDGE_FILE` — absolute path to the knowledge JSON (uses `%kernel.project_dir%`, resolved via `env(resolve:...)`).
 - `CHAT_SYSTEM_PROMPT_FILE` — absolute path to the chat system prompt (read via `env(file:resolve:...)`).
@@ -49,33 +47,36 @@ Required env vars (see `.env` for the full list, set real values in `.env.local`
 
 ## Architecture
 
-Three public surfaces: **auth, contact form, and chat assistant**.
+Two public surfaces: **contact form and chat assistant**. Both are anonymous; there is no auth layer.
 
-- **Auth**: `POST /api/login_check` (route `auth` in `config/routes.yaml`). Stateless JWT firewall (`config/packages/security.yaml`) — the JSON login handler is wired to Lexik's success/failure handlers. Subsequent requests authenticate by `Authorization: Bearer <jwt>`.
-- **Contact resource** (`src/Entity/Contact.php`): exposed by API Platform with a single `POST` operation, secured by `is_granted('ROLE_ADMIN')` even though it is the contact-form endpoint — the front sends the admin JWT plus a reCAPTCHA token. The route is `/api/contacts`.
+- **Contact resource** (`src/Entity/Contact.php`): exposed by API Platform with a single `POST` operation at `/api/contacts`, with **no security expression** (anonymous). It is guarded by `ContactGuardListener` (origin + per-IP rate limit), a single-use hCaptcha token, a honeypot field, a daily global cap, and strict validation. API Platform auto-adds a `NotExposed` GET item (returns 404) for IRI generation only — submissions are never readable over HTTP.
 - **Chat assistant**: `POST /api/chat` — stateless RAG pipeline (Gemini embeddings + generation, MySQL JSON vector store, in-PHP cosine retrieval, SSE streaming). See dedicated section below.
 - **Index** (`src/Controller/IndexController.php`): `/` redirects to `FRONT_URL` in non-dev, to `/_profiler` in dev. There is no UI in this app.
 
 ### Contact write pipeline
 
-`POST /api/contacts` goes through this chain — when modifying the contact flow, all three layers usually need to stay in sync:
+`POST /api/contacts` goes through this chain — when modifying the contact flow, all layers usually need to stay in sync:
 
-1. **Denormalization** into `Contact` using the `contact:write` serialization group. The `token` field exists only in this group (no DB column) and carries the reCAPTCHA response.
-2. **Validation**: standard constraints (`NotBlank`, `Email`, `AssertPhoneNumber`) plus `HCaptchaConstraint` on `token`. `HCaptchaConstraintValidator` POSTs to `HCAPTCHA_VERIFY_URL` with the secret + token and fails the constraint if `success` is false. Empty/null tokens short-circuit and pass — front-end is expected to always send one.
-3. **State processor** (`src/State/ContactProcessor.php`): wraps the Doctrine persist processor (`api_platform.doctrine.orm.state.persist_processor`), invoking `EmailService::sendMail()` *before* persisting. Mail failures are silently swallowed — persistence still proceeds.
+0. **`ContactGuardListener`** (`src/EventListener/ContactGuardListener.php`, `kernel.request` priority 16, before the controller) — for `POST /api/contacts` only: 403 if `Origin !== FRONT_URL`, then a per-IP sliding-window rate limit (`contact_per_ip`, 10/h, in `config/packages/rate_limiter.yaml`) → 429 on overflow. Mirrors the chat endpoint's inline checks; it is the structural anti-flood guard since every accepted POST sends an email.
+1. **Denormalization** into `Contact` using the `contact:write` serialization group. The `token` field exists only in this group (no DB column) and carries the hCaptcha response.
+2. **Validation**: standard constraints (`NotBlank` with `normalizer: 'trim'`, `Length` matching each DB column — 50 for names, 100 for email/company/opportunity, 5000 for message — `Email`, `AssertPhoneNumber`) plus `NotBlank` + `HCaptchaConstraint` on `token`. `HCaptchaConstraintValidator` POSTs to `HCAPTCHA_VERIFY_URL` with the secret + token and fails the constraint if `success` is false. The validator still short-circuits on empty/null, but `NotBlank` (key `error.captcha.missing`) now rejects a missing/empty token first, so a captcha-less submission can no longer pass — see the security note below. A honeypot field `website` (write-group only, no column, `Blank` constraint, key `error.field.invalid`) must stay empty; the real front never renders it, so a bot that fills it gets a 422.
+3. **State processor** (`src/State/ContactProcessor.php`): wraps the Doctrine persist processor (`api_platform.doctrine.orm.state.persist_processor`). First consumes the `contact_global` daily limiter (100/day, all IPs) — 429 if exhausted, before any mail or persist — then invokes `EmailService::sendMail()` *before* persisting. Mail failures are silently swallowed — persistence still proceeds. The global cap is consumed here (post-validation) so captcha-failing requests can't burn it.
 
 `EmailService` renders `templates/email/contact.html.twig` via `TemplatedEmail` and sends through the Symfony Mailer (`MAILER_DSN`).
 
 ### Security model
 
-- `User` entity (`src/Entity/User.php`) is the only identity provider, looked up by email. `ROLE_ADMIN` is a class constant (`User::ROLE_ADMIN`) — reuse it instead of the string literal when checking grants.
-- `UserFixtures` creates exactly one admin user from `USER_ADMIN_EMAIL` / `USER_ADMIN_PASSWORD`. There is no registration endpoint.
-- `ContactVoter` exists but the `Contact` resource currently checks `ROLE_ADMIN` inline in the `#[ApiResource]` attribute, not via the voter — the voter is not actively wired into the resource's security expression.
-- Access control in `security.yaml`: `/api/docs` is public, `POST /api/login` is public, `POST /api/contacts` requires `IS_AUTHENTICATED_FULLY`. Everything else inherits the firewall default.
+- **No authentication, by design.** There is no `User`, no firewall, no login, no JWT; Symfony's SecurityBundle is removed and `config/packages/security.yaml` no longer exists. Both public endpoints are anonymous. Security rests entirely on the anti-abuse controls below, not on identity — a public SPA cannot hold a secret, so authenticating it was theatre. If a real authenticated area is ever needed (e.g. an admin to read submissions), reintroduce SecurityBundle + a `User` and protect *those* operations explicitly; never gate the public contact form behind a front-embedded credential again.
+- **hCaptcha is the only bot filter — `NotBlank` on the token is load-bearing.** `HCaptchaConstraintValidator::validate()` fail-opens: it returns *without a violation* on a `null`/empty token. So `NotBlank(message: 'error.captcha.missing')` on `Contact::$token` is what rejects a missing/empty token (422) before that fail-open branch. With no auth behind the form, hCaptcha is the sole identity-free wall, which makes this `NotBlank` critical — **do not remove it** without first moving the validator to fail closed. (The chat path below already fails closed.)
+- **Chatbot captcha path.** `POST /api/chat` shares `HCaptchaVerifier::verify()` (step 2 of the chat pipeline), which *fails closed* — `verify(null)` / `verify('')` returns `false` → 403. It was never bypassable the way the contact form was. The two entry points still diverge (the contact-form validator short-circuits empty/null as a *pass*, but `NotBlank` on `Contact::$token` now rejects those first; the chat path reads the verifier directly). Worth consolidating onto the fail-closed verifier eventually, but no live gap remains.
+- **hCaptcha tokens are single-use (anti-replay).** `HCaptchaVerifier::verify()` records each accepted token (sha256, in `cache.app` under `hcaptcha.<hash>`, TTL 600s > hCaptcha's ~2 min token lifetime) and rejects any second presentation. Without this, siteverify would accept the same solved token repeatedly, letting one captcha solve be scripted into many submissions. Failed tokens are **not** recorded, so a transient siteverify failure doesn't burn a legitimate token. Shared by both the contact form and the chat endpoint.
+- **Trusted proxies.** `framework.yaml` sets `trusted_proxies: '%env(default::SYMFONY_TRUSTED_PROXIES)%'`. **In production this env var MUST be set** to the reverse-proxy IP(s); otherwise `getClientIp()` returns the proxy IP and every client shares one rate-limit bucket. Unset locally it resolves to empty (no proxy trusted, `X-Forwarded-*` ignored) so a spoofed `X-Forwarded-For` cannot dodge the limiter.
+- **Contact is never readable via the API.** The `Contact` resource declares only `POST`; API Platform auto-adds a `NotExposed` `GET` item operation (route `_api_/contacts/{id}{._format}_get`, controller `api_platform.action.not_exposed`) **purely for IRI generation — it returns 404**. There is no way to read stored submissions over HTTP. Keep it that way: there is no auth layer to protect a read operation, so do not add a real `Get`/`GetCollection` (a future admin reader would need SecurityBundle reintroduced first).
+- **Anti-spam, defense in depth (contact form).** No single control is the wall; they stack: single-use hCaptcha (real bot filter) + `contact_per_ip` (10/h) + `contact_global` (100/day) + honeypot + `Origin` check + strict validation. A public form cannot be made literally un-callable outside the front (any browser request is replayable via curl); the goal is to make automated/at-scale abuse infeasible and cap the blast radius. The strongest *additional* layer is infrastructural (edge WAF / bot management such as Cloudflare Turnstile) and lives outside this app.
+- **Recon surface reduced in prod.** `api_platform.yaml` disables `enable_docs` / `enable_swagger` / `enable_swagger_ui` / `enable_re_doc` / `enable_entrypoint` under `when@prod` (kept in dev). CORS (`nelmio_cors.yaml`) is narrowed to `allow_methods: [POST, OPTIONS]` and `allow_headers: [Content-Type, Authorization, X-HCaptcha-Token]` instead of the previous all-verbs + `*` wildcard. `Authorization` is kept only so a front still sending a legacy bearer token doesn't trip CORS preflight; it is ignored server-side and can be dropped once the front stops sending it.
 
 ### Phone numbers
-
-`Contact::$phone` uses the `phone_number` Doctrine type from `odolbeau/phone-number-bundle` and stores a `libphonenumber\PhoneNumber`. The setter accepts a string and parses it via `PhoneNumberUtil`, swallowing `NumberParseException` to null — keep this behaviour when touching the setter. The OpenAPI schema is overridden to `string` via `#[ApiProperty(openapiContext: ['type' => 'string'])]`.
+The `phone` column uses the `phone_number` Doctrine type from `odolbeau/phone-number-bundle` (registered in `config/packages/doctrine.yaml`). `Contact::setPhone()` accepts a `PhoneNumber` or a string; the international `+` prefix is **mandatory** (default region `Contact::PHONE_DEFAULT_REGION = 'FR'`). An empty string becomes `null`; a string without `+` or that fails to parse throws `NotNormalizableValueException` → HTTP 400 (`error.field.format`). It does **not** silently null invalid input. The OpenAPI schema is overridden to advertise `phone` as a plain `string` (`#[ApiProperty(openapiContext: ['type' => 'string'])]`).
 
 ## Chat assistant
 
@@ -84,10 +85,10 @@ Standalone RAG pipeline on `POST /api/chat`, scoped to Caroline's portfolio. All
 ### Request pipeline (in order)
 
 1. `OriginCheckListener` (priority 16, after `RouterListener` priority 32) — 403 if `Origin !== FRONT_URL`.
-2. `HCaptchaVerifier::verify($request->headers->get('X-HCaptcha-Token'))` — 403 if invalid. Shared with the contact form validator.
+2. `HCaptchaVerifier::verify($request->headers->get('X-HCaptcha-Token'))` — 403 if invalid. Shared with the contact form validator. Tokens are single-use (anti-replay; see Security model).
 3. `RateLimiterFactory $chatPerIpLimiter` (sliding window, 60/h per IP, declared in `config/packages/rate_limiter.yaml`) — 429 on overflow.
 4. JSON → `ChatRequest` DTO via Serializer + Validator constraints (`NotBlank`, `Length 1-500`, Unicode `Regex`, `Count max 6` on history) — 400 on failure.
-5. `QuotaGuard` — checks the daily Gemini counter in `cache.app` (`gemini_quota:YYYY-MM-DD`, TTL 26h). If exhausted → SSE `event: error reason: quota_exceeded`, no HTTP call.
+5. `QuotaGuard` — checks the daily Gemini counter in `cache.app` (`gemini_quota.YYYY-MM-DD`, TTL 26h). If exhausted → SSE `event: error reason: quota_exceeded`, no HTTP call.
 6. `EmbeddingService::embed($question)` — Gemini `batchEmbedContents` with `outputDimensionality: 768`. 429 → `QuotaExceededException` + guard exhausted.
 7. `ChatChunkRepository::findTopK($embedding, K)` — loads all chunks from `chat_chunk`, computes cosine in PHP (`dot / (||a|| * ||b||)`), sorts, slices top-K.
 8. If `topScore < CHAT_RETRIEVAL_THRESHOLD` → SSE off-scope message + `event: done outcome: off_scope`. **No generation call** (saves quota).
@@ -141,3 +142,7 @@ Inspect realized scores to recalibrate:
 ```bash
 php bin/console doctrine:query:sql "SELECT outcome, MIN(top_score), AVG(top_score), MAX(top_score) FROM chat_log GROUP BY outcome"
 ```
+- **`.env` is committed** with placeholder defaults; real secrets belong in `.env.local` (gitignored) or Symfony's secrets vault. `HCAPTCHA_SITE_KEY` / `HCAPTCHA_SECRET_KEY` are blank in `.env` by design.
+- **Email errors are intentionally swallowed** in `ContactProcessor::process()`. If you need to surface mailer failures, change that behavior deliberately — don't assume the empty `catch` is a bug.
+- The codebase mixes indentation styles (2-space in newer files like `Contact.php` / `IndexController.php`, 4-space in older Symfony-generated files like `User.php`). Match the file you're editing rather than reformatting.
+- **Migrations are MySQL-dialect** (`AUTO_INCREMENT` / `LONGTEXT` / `utf8mb4`) and run under MAMP. `doctrine:migrations:diff` pulls any *unapplied* pending migrations into the generated file as noise — trim the generated migration down to just your intended change.

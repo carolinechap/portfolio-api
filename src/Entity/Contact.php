@@ -16,7 +16,9 @@ use libphonenumber\PhoneNumberUtil;
 use Misd\PhoneNumberBundle\Validator\Constraints\PhoneNumber as AssertPhoneNumber;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
+use Symfony\Component\Validator\Constraints\Blank;
 use Symfony\Component\Validator\Constraints\Email;
+use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotBlank;
 
 #[ORM\Entity(repositoryClass: ContactRepository::class)]
@@ -25,7 +27,6 @@ use Symfony\Component\Validator\Constraints\NotBlank;
   operations: [
     new Post(
       processor: ContactProcessor::class,
-      security: 'is_granted(\'' . User::ROLE_ADMIN . '\')'
     ),
   ],
   normalizationContext: ['groups' => ['contact:read']],
@@ -41,12 +42,14 @@ class Contact
   #[ORM\Column]
   private ?int $id = null;
   #[ORM\Column(type: Types::STRING, length: 50)]
-  #[NotBlank(message: 'error.field.not_blank')]
+  #[NotBlank(message: 'error.field.not_blank', normalizer: 'trim')]
+  #[Length(max: 50, maxMessage: 'error.field.too_long')]
   #[Groups(['contact:read', 'contact:write'])]
   private string $firstname;
 
   #[ORM\Column(type: Types::STRING, length: 50)]
-  #[NotBlank(message: 'error.field.not_blank')]
+  #[NotBlank(message: 'error.field.not_blank', normalizer: 'trim')]
+  #[Length(max: 50, maxMessage: 'error.field.too_long')]
   #[Groups(['contact:read', 'contact:write'])]
   private string $lastname;
 
@@ -60,30 +63,45 @@ class Contact
 
   #[ORM\Column(type: Types::STRING, length: 100)]
   #[
-    NotBlank(message: 'error.field.not_blank'),
+    NotBlank(message: 'error.field.not_blank', normalizer: 'trim'),
+    Length(max: 100, maxMessage: 'error.field.too_long'),
     Email(message: 'error.field.format', mode: Email::VALIDATION_MODE_STRICT)
   ]
   #[Groups(['contact:read', 'contact:write'])]
   private string $email;
 
   #[ORM\Column(type: Types::TEXT)]
-  #[NotBlank(message: 'error.field.not_blank')]
+  #[NotBlank(message: 'error.field.not_blank', normalizer: 'trim')]
+  #[Length(max: 5000, maxMessage: 'error.field.too_long')]
   #[Groups(['contact:read', 'contact:write'])]
   private string $message;
 
   #[ORM\Column(type: Types::STRING, length: 100, nullable: true)]
+  #[Length(max: 100, maxMessage: 'error.field.too_long')]
   #[Groups(['contact:read', 'contact:write'])]
   private ?string $company = null;
 
   #[ORM\Column(type: Types::STRING, length: 100, nullable: true)]
+  #[Length(max: 100, maxMessage: 'error.field.too_long')]
   #[Groups(['contact:read', 'contact:write'])]
   private ?string $opportunity = null;
 
   #[Groups(['contact:write'])]
   #[
+    NotBlank(message: 'error.captcha.missing'),
     HCaptchaConstraint
   ]
   private string $token;
+
+  /**
+   * Honeypot. The real front never renders this field, so a non-empty value
+   * means an automated submission that blindly filled every input — rejected
+   * with a 422. Absent from the payload it stays null and `Blank` passes, so
+   * genuine submissions are unaffected. Not persisted (write-group only).
+   */
+  #[Groups(['contact:write'])]
+  #[Blank(message: 'error.field.invalid')]
+  private ?string $website = null;
 
   /**
    * @inheritDoc
@@ -261,6 +279,16 @@ class Contact
 
   public function setToken(string $token): Contact {
     $this->token = $token;
+
+    return $this;
+  }
+
+  public function getWebsite(): ?string {
+    return $this->website;
+  }
+
+  public function setWebsite(?string $website): Contact {
+    $this->website = $website;
 
     return $this;
   }

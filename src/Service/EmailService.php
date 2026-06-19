@@ -2,7 +2,6 @@
 
 namespace App\Service;
 use App\Entity\Contact;
-use App\Model\EmailModel;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
