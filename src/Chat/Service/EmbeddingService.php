@@ -40,11 +40,9 @@ class EmbeddingService
      * @throws QuotaExceededException When the daily Gemini quota is exhausted or the API returns 429
      * @throws GeminiException        On transport errors or unexpected response shape
      */
-    public function embed(string $text): array
+    public function embed(string $text, EmbeddingTaskType $taskType): array
     {
-        $vectors = $this->call([$text]);
-
-        return $vectors[0];
+        return $this->call([$text], $taskType)[0];
     }
 
     /**
@@ -58,13 +56,13 @@ class EmbeddingService
      * @throws QuotaExceededException When the daily Gemini quota is exhausted or the API returns 429
      * @throws GeminiException        On transport errors or unexpected response shape
      */
-    public function embedBatch(array $texts): array
+    public function embedBatch(array $texts, EmbeddingTaskType $taskType): array
     {
         if ($texts === []) {
             return [];
         }
 
-        return $this->call($texts);
+        return $this->call($texts, $taskType);
     }
 
     /**
@@ -76,7 +74,7 @@ class EmbeddingService
      * @throws QuotaExceededException When the daily quota is exhausted or the API returns 429
      * @throws GeminiException        On transport errors or unexpected response shape
      */
-    private function call(array $texts): array
+    private function call(array $texts, EmbeddingTaskType $taskType): array
     {
         if (!$this->quotaGuard->canCall()) {
             throw new QuotaExceededException('Daily Gemini quota exhausted');
@@ -90,6 +88,7 @@ class EmbeddingService
                 fn (string $t): array => [
                     'model' => 'models/' . $this->model,
                     'content' => ['parts' => [['text' => $t]]],
+                    'taskType' => $taskType->value,
                     'outputDimensionality' => self::OUTPUT_DIM,
                 ],
                 $texts,

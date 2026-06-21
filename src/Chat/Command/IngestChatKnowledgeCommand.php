@@ -39,8 +39,7 @@ final class IngestChatKnowledgeCommand extends Command
     {
         $this
             ->addOption('file', null, InputOption::VALUE_REQUIRED, 'Override knowledge file path')
-            ->addOption('force', null, InputOption::VALUE_NONE, 'Re-embed all entries')
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show diff without changes');
+            ->addOption('force', null, InputOption::VALUE_NONE, 'Re-embed all entries');
     }
 
     /**
@@ -82,11 +81,6 @@ final class IngestChatKnowledgeCommand extends Command
         if (!is_array($payload) || !isset($payload['entries']) || !is_array($payload['entries'])) {
             $io->error('Invalid payload: expected an "entries" array.');
             return Command::FAILURE;
-        }
-
-        if ($input->getOption('dry-run')) {
-            $io->note('Dry-run not yet implemented in v1 — re-run without --dry-run.');
-            return Command::SUCCESS;
         }
 
         /** @var array{entries: list<array{key: string, type?: string, content: string, tags?: list<string>}>} $payload */

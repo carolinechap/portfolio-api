@@ -11,11 +11,6 @@ use Doctrine\ORM\EntityManagerInterface;
 /**
  * Synchronizes the chat_chunk table with the canonical knowledge JSON file.
  *
- * For each entry: inserts when the source key is unknown, updates when the
- * content hash differs (or --force is passed), skips otherwise. Entries that
- * disappeared from the payload are deleted from the table. Embedding calls
- * are batched to minimize Gemini API usage.
- *
  * Before any embedding work, every entry's `content` is screened against
  * {@see self::FORBIDDEN_PATTERNS}. Any match — instruction-injection
  * phrasing, `$ENV_VAR` leaks, or API-key-shaped tokens — aborts the whole
@@ -44,6 +39,7 @@ final readonly class KnowledgeIngester
         private EntityManagerInterface $em,
         private ChatChunkRepository $repo,
         private EmbeddingService $embeddings,
+        private ChatQueryCache $queryCache,
     ) {
     }
 
@@ -92,11 +88,11 @@ final readonly class KnowledgeIngester
         }
 
         foreach (array_chunk($toEmbed, self::BATCH_SIZE) as $batch) {
-            $texts = array_map(static fn (array $i): string => $i['entry']['content'], $batch);
-            $vectors = $this->embeddings->embedBatch($texts);
+            $texts = array_map(static fn (array $index): string => $index['entry']['content'], $batch);
+            $vectors = $this->embeddings->embedBatch($texts, EmbeddingTaskType::RetrievalDocument);
             $apiCalls++;
-            foreach ($batch as $i => $item) {
-                $vector = $vectors[$i];
+            foreach ($batch as $index => $item) {
+                $vector = $vectors[$index];
                 $meta = ['type' => $item['entry']['type'] ?? null, 'tags' => $item['entry']['tags'] ?? []];
                 if ($item['mode'] === 'insert') {
                     $chunk = new ChatChunk(
@@ -119,6 +115,7 @@ final readonly class KnowledgeIngester
 
         $deleted = $this->repo->deleteNotIn($keys);
         $this->repo->invalidateCache();
+        $this->queryCache->invalidateAnswers();
 
         return new IngestionReport($added, $updated, $skipped, $deleted, $apiCalls);
     }

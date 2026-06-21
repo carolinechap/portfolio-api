@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Chat\Command;
 
 use App\Chat\Service\EmbeddingService;
+use App\Chat\Service\EmbeddingTaskType;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -22,8 +23,8 @@ final class IngestChatKnowledgeCommandTest extends KernelTestCase
 
         $c->set(EmbeddingService::class, new class extends EmbeddingService {
             public function __construct() {}
-            public function embed(string $text): array { return [1.0]; }
-            public function embedBatch(array $texts): array { return array_map(static fn () => [1.0], $texts); }
+            public function embed(string $text, EmbeddingTaskType $taskType): array { return [1.0]; }
+            public function embedBatch(array $texts, EmbeddingTaskType $taskType): array { return array_map(static fn () => [1.0], $texts); }
         });
 
         $tmp = tempnam(sys_get_temp_dir(), 'chatkb');

@@ -7,6 +7,7 @@ namespace App\Tests\Chat\Service;
 use App\Chat\Exception\GeminiException;
 use App\Chat\Exception\QuotaExceededException;
 use App\Chat\Service\EmbeddingService;
+use App\Chat\Service\EmbeddingTaskType;
 use App\Chat\Service\QuotaGuard;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -27,7 +28,7 @@ final class EmbeddingServiceTest extends TestCase
             model: 'text-embedding-004',
         );
 
-        self::assertSame([0.1, 0.2, 0.3], $service->embed('hello'));
+        self::assertSame([0.1, 0.2, 0.3], $service->embed('hello', EmbeddingTaskType::RetrievalQuery));
     }
 
     public function testBatchEmbedReturnsParallelVectors(): void
@@ -47,7 +48,29 @@ final class EmbeddingServiceTest extends TestCase
             model: 'text-embedding-004',
         );
 
-        self::assertSame([[0.1, 0.2], [0.3, 0.4]], $service->embedBatch(['a', 'b']));
+        self::assertSame([[0.1, 0.2], [0.3, 0.4]], $service->embedBatch(['a', 'b'], EmbeddingTaskType::RetrievalDocument));
+    }
+
+    public function testSendsTaskTypeInPayload(): void
+    {
+        $capturedBody = null;
+        $client = new MockHttpClient(function (string $method, string $url, array $options) use (&$capturedBody): MockResponse {
+            $capturedBody = $options['body'] ?? null;
+
+            return new MockResponse(json_encode(['embedding' => ['values' => [0.1]]], JSON_THROW_ON_ERROR));
+        });
+        $service = new EmbeddingService(
+            $client,
+            new QuotaGuard(new ArrayAdapter(), limit: 100),
+            apiKey: 'k',
+            baseUrl: 'https://gen.test/v1beta',
+            model: 'text-embedding-004',
+        );
+
+        $service->embed('hello', EmbeddingTaskType::RetrievalDocument);
+
+        self::assertIsString($capturedBody);
+        self::assertStringContainsString('RETRIEVAL_DOCUMENT', $capturedBody);
     }
 
     public function testThrowsQuotaExceededOn429(): void
@@ -62,7 +85,7 @@ final class EmbeddingServiceTest extends TestCase
         );
 
         $this->expectException(QuotaExceededException::class);
-        $service->embed('hello');
+        $service->embed('hello', EmbeddingTaskType::RetrievalQuery);
     }
 
     public function testBlocksWhenQuotaGuardExhausted(): void
@@ -79,7 +102,7 @@ final class EmbeddingServiceTest extends TestCase
         );
 
         $this->expectException(QuotaExceededException::class);
-        $service->embed('hello');
+        $service->embed('hello', EmbeddingTaskType::RetrievalQuery);
     }
 
     public function testThrowsGeminiOnUnexpectedShape(): void
@@ -94,6 +117,6 @@ final class EmbeddingServiceTest extends TestCase
         );
 
         $this->expectException(GeminiException::class);
-        $service->embed('hello');
+        $service->embed('hello', EmbeddingTaskType::RetrievalQuery);
     }
 }
