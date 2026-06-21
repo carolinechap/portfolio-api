@@ -6,6 +6,7 @@ namespace App\Tests\Chat\Service;
 
 use App\Chat\Service\HCaptchaVerifier;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -15,7 +16,7 @@ final class HCaptchaVerifierTest extends TestCase
   public function testReturnsTrueWhenApiReportsSuccess(): void
   {
     $client = new MockHttpClient([new MockResponse(json_encode(['success' => true], JSON_THROW_ON_ERROR))]);
-    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter());
+    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter(), new NullLogger());
 
     self::assertTrue($verifier->verify('token'));
   }
@@ -23,7 +24,7 @@ final class HCaptchaVerifierTest extends TestCase
   public function testReturnsFalseWhenApiReportsFailure(): void
   {
     $client = new MockHttpClient([new MockResponse(json_encode(['success' => false], JSON_THROW_ON_ERROR))]);
-    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter());
+    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter(), new NullLogger());
 
     self::assertFalse($verifier->verify('token'));
   }
@@ -31,7 +32,7 @@ final class HCaptchaVerifierTest extends TestCase
   public function testReturnsFalseWhenApiThrows(): void
   {
     $client = new MockHttpClient([new MockResponse('', ['http_code' => 500])]);
-    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter());
+    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter(), new NullLogger());
 
     self::assertFalse($verifier->verify('token'));
   }
@@ -39,7 +40,7 @@ final class HCaptchaVerifierTest extends TestCase
   public function testReturnsFalseOnEmptyToken(): void
   {
     $client = new MockHttpClient();
-    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter());
+    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter(), new NullLogger());
 
     self::assertFalse($verifier->verify(''));
   }
@@ -51,7 +52,7 @@ final class HCaptchaVerifierTest extends TestCase
       new MockResponse(json_encode(['success' => true], JSON_THROW_ON_ERROR)),
       new MockResponse(json_encode(['success' => true], JSON_THROW_ON_ERROR)),
     ]);
-    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter());
+    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter(), new NullLogger());
 
     self::assertTrue($verifier->verify('token'), 'first use accepted');
     self::assertFalse($verifier->verify('token'), 'replay rejected');
@@ -65,7 +66,7 @@ final class HCaptchaVerifierTest extends TestCase
       new MockResponse(json_encode(['success' => false], JSON_THROW_ON_ERROR)),
       new MockResponse(json_encode(['success' => true], JSON_THROW_ON_ERROR)),
     ]);
-    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter());
+    $verifier = new HCaptchaVerifier($client, 'https://h.test/siteverify', 'secret', new ArrayAdapter(), new NullLogger());
 
     self::assertFalse($verifier->verify('token'));
     self::assertTrue($verifier->verify('token'));

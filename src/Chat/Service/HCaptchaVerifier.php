@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Chat\Service;
 
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -24,6 +25,7 @@ class HCaptchaVerifier
     private readonly string $secretKey,
     #[Autowire(service: 'cache.app')]
     private readonly CacheItemPoolInterface $consumedTokens,
+    private readonly LoggerInterface $logger,
   ) {
   }
 
@@ -44,6 +46,7 @@ class HCaptchaVerifier
 
     $item = $this->consumedTokens->getItem('hcaptcha.' . hash('sha256', $token));
     if ($item->isHit()) {
+      $this->logger->warning('hCaptcha rejected: token already consumed (anti-replay — reused or double-submitted token).');
       return false;
     }
 
@@ -55,11 +58,18 @@ class HCaptchaVerifier
         ],
       ]);
       $data = $response->toArray(false);
-    } catch (HttpClientExceptionInterface | \JsonException) {
+    } catch (HttpClientExceptionInterface | \JsonException $e) {
+      $this->logger->warning('hCaptcha verify request failed (siteverify unreachable or non-JSON response).', [
+        'exception' => $e::class,
+        'message' => $e->getMessage(),
+      ]);
       return false;
     }
 
     if (($data['success'] ?? false) !== true) {
+      $this->logger->warning('hCaptcha siteverify rejected the token.', [
+        'error-codes' => $data['error-codes'] ?? [],
+      ]);
       return false;
     }
 

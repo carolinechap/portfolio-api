@@ -4,6 +4,13 @@ framework:
             policy: 'sliding_window'
             limit: 60
             interval: '1 hour'
+        # Caps chat session minting (each mint verifies one hCaptcha solve and
+        # hits the outbound siteverify call). A session lasts ~30 min, so a
+        # handful per hour per IP is plenty; this throttles captcha-solving farms.
+        chat_session_per_ip:
+            policy: 'sliding_window'
+            limit: 20
+            interval: '1 hour'
         # Throttles the public contact form per client IP. The contact endpoint
         # triggers an email on every accepted POST, so this caps mail-bombing /
         # DoS from a single source even when a captcha token is presented.
