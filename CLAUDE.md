@@ -15,6 +15,7 @@ php bin/console doctrine:database:create         # create DB defined in DATABASE
 php bin/console doctrine:migrations:migrate      # apply migrations from migrations/
 php bin/console make:migration                   # generate a migration from entity diff
 php bin/console app:chat:ingest                  # ingest data/chat-knowledge.json into chat_chunk (calls Gemini embeddings)
+php bin/console app:chat:ask "question"          # run one question through the pipeline (real Gemini) and print answer + retrieval diagnostics
 php bin/console app:chat:purge-logs              # delete chat_log rows older than CHAT_LOG_RETENTION_DAYS
 symfony serve                                    # local dev server (or `php -S 127.0.0.1:8000 -t public`)
 ```
@@ -44,6 +45,7 @@ Required env vars (see `.env` for the full list, set real values in `.env.local`
 - `CHAT_KNOWLEDGE_FILE` — absolute path to the knowledge JSON (uses `%kernel.project_dir%`, resolved via `env(resolve:...)`).
 - `CHAT_SYSTEM_PROMPT_FILE` — absolute path to the chat system prompt (read via `env(file:resolve:...)`).
 - `CHAT_RETRIEVAL_K` / `CHAT_RETRIEVAL_THRESHOLD` / `CHAT_HISTORY_MAX_PAIRS` / `CHAT_LOG_RETENTION_DAYS` — retrieval and conversation tuning.
+- `CHAT_SESSION_TTL` — chat session token lifetime in seconds (default 1800, set as a `parameters: env(CHAT_SESSION_TTL)` fallback in `config/services.yaml`; override in `.env.local`).
 
 ## Architecture
 
@@ -68,34 +70,42 @@ Two public surfaces: **contact form and chat assistant**. Both are anonymous; th
 
 - **No authentication, by design.** There is no `User`, no firewall, no login, no JWT; Symfony's SecurityBundle is removed and `config/packages/security.yaml` no longer exists. Both public endpoints are anonymous. Security rests entirely on the anti-abuse controls below, not on identity — a public SPA cannot hold a secret, so authenticating it was theatre. If a real authenticated area is ever needed (e.g. an admin to read submissions), reintroduce SecurityBundle + a `User` and protect *those* operations explicitly; never gate the public contact form behind a front-embedded credential again.
 - **hCaptcha is the only bot filter — `NotBlank` on the token is load-bearing.** `HCaptchaConstraintValidator::validate()` fail-opens: it returns *without a violation* on a `null`/empty token. So `NotBlank(message: 'error.captcha.missing')` on `Contact::$token` is what rejects a missing/empty token (422) before that fail-open branch. With no auth behind the form, hCaptcha is the sole identity-free wall, which makes this `NotBlank` critical — **do not remove it** without first moving the validator to fail closed. (The chat path below already fails closed.)
-- **Chatbot captcha path.** `POST /api/chat` shares `HCaptchaVerifier::verify()` (step 2 of the chat pipeline), which *fails closed* — `verify(null)` / `verify('')` returns `false` → 403. It was never bypassable the way the contact form was. The two entry points still diverge (the contact-form validator short-circuits empty/null as a *pass*, but `NotBlank` on `Contact::$token` now rejects those first; the chat path reads the verifier directly). Worth consolidating onto the fail-closed verifier eventually, but no live gap remains.
+- **Chatbot captcha path.** The chat no longer verifies hCaptcha per message. The single solve happens at `POST /api/chat/session` (`HCaptchaVerifier::verify(X-HCaptcha-Token)`, *fails closed*, single-use anti-replay — shared with the contact form), which mints a short-lived session token via `ChatSessionTokenManager`. `POST /api/chat` then only validates that token (`X-Chat-Session` → **401** `session_invalid`/`session_expired` on missing/invalid/expired). The bot wall sits at session creation (capped by `chat_session_per_ip`, 20/h), message volume by `chat_per_ip` (60/h). A captcha-less or session-less chat request can never reach generation. Missing/invalid captcha at the mint endpoint → **422** violation on `token`, same shape as the contact form.
 - **hCaptcha tokens are single-use (anti-replay).** `HCaptchaVerifier::verify()` records each accepted token (sha256, in `cache.app` under `hcaptcha.<hash>`, TTL 600s > hCaptcha's ~2 min token lifetime) and rejects any second presentation. Without this, siteverify would accept the same solved token repeatedly, letting one captcha solve be scripted into many submissions. Failed tokens are **not** recorded, so a transient siteverify failure doesn't burn a legitimate token. Shared by both the contact form and the chat endpoint.
 - **Trusted proxies.** `framework.yaml` sets `trusted_proxies: '%env(default::SYMFONY_TRUSTED_PROXIES)%'`. **In production this env var MUST be set** to the reverse-proxy IP(s); otherwise `getClientIp()` returns the proxy IP and every client shares one rate-limit bucket. Unset locally it resolves to empty (no proxy trusted, `X-Forwarded-*` ignored) so a spoofed `X-Forwarded-For` cannot dodge the limiter.
 - **Contact is never readable via the API.** The `Contact` resource declares only `POST`; API Platform auto-adds a `NotExposed` `GET` item operation (route `_api_/contacts/{id}{._format}_get`, controller `api_platform.action.not_exposed`) **purely for IRI generation — it returns 404**. There is no way to read stored submissions over HTTP. Keep it that way: there is no auth layer to protect a read operation, so do not add a real `Get`/`GetCollection` (a future admin reader would need SecurityBundle reintroduced first).
 - **Anti-spam, defense in depth (contact form).** No single control is the wall; they stack: single-use hCaptcha (real bot filter) + `contact_per_ip` (10/h) + `contact_global` (100/day) + honeypot + `Origin` check + strict validation. A public form cannot be made literally un-callable outside the front (any browser request is replayable via curl); the goal is to make automated/at-scale abuse infeasible and cap the blast radius. The strongest *additional* layer is infrastructural (edge WAF / bot management such as Cloudflare Turnstile) and lives outside this app.
-- **Recon surface reduced in prod.** `api_platform.yaml` disables `enable_docs` / `enable_swagger` / `enable_swagger_ui` / `enable_re_doc` / `enable_entrypoint` under `when@prod` (kept in dev). CORS (`nelmio_cors.yaml`) is narrowed to `allow_methods: [POST, OPTIONS]` and `allow_headers: [Content-Type, Authorization, X-HCaptcha-Token]` instead of the previous all-verbs + `*` wildcard. `Authorization` is kept only so a front still sending a legacy bearer token doesn't trip CORS preflight; it is ignored server-side and can be dropped once the front stops sending it.
+- **Recon surface reduced in prod.** `api_platform.yaml` disables `enable_docs` / `enable_swagger` / `enable_swagger_ui` / `enable_re_doc` / `enable_entrypoint` under `when@prod` (kept in dev). CORS (`nelmio_cors.yaml`) is narrowed to `allow_methods: [POST, OPTIONS]` and `allow_headers: [Content-Type, Authorization, X-HCaptcha-Token, X-Chat-Session, Cache-Control]` instead of the previous all-verbs + `*` wildcard; `expose_headers` includes `Retry-After` so the front can read it on a 429. `Authorization` is kept only so a front still sending a legacy bearer token doesn't trip CORS preflight; it is ignored server-side and can be dropped once the front stops sending it.
 
 ### Phone numbers
-The `phone` column uses the `phone_number` Doctrine type from `odolbeau/phone-number-bundle` (registered in `config/packages/doctrine.yaml`). `Contact::setPhone()` accepts a `PhoneNumber` or a string; the international `+` prefix is **mandatory** (default region `Contact::PHONE_DEFAULT_REGION = 'FR'`). An empty string becomes `null`; a string without `+` or that fails to parse throws `NotNormalizableValueException` → HTTP 400 (`error.field.format`). It does **not** silently null invalid input. The OpenAPI schema is overridden to advertise `phone` as a plain `string` (`#[ApiProperty(openapiContext: ['type' => 'string'])]`).
+The `phone` column uses the `phone_number` Doctrine type from `odolbeau/phone-number-bundle` (registered in `config/packages/doctrine.yaml`). `Contact::setPhone()` accepts a `PhoneNumber` or a string; the international `+` prefix is **mandatory** (default region `Contact::PHONE_DEFAULT_REGION = 'FR'`). An empty string becomes `null`; a string without `+` or that fails to parse throws `NotNormalizableValueException`. Because `api_platform.yaml` sets `collect_denormalization_errors: true`, that error is collected as a **422** validation violation on `phone` (generic type message, e.g. `This value should be of type string.`), **not** a 400 — verified in `tests/Api/ContactResourceTest`. It does **not** silently null invalid input. The OpenAPI schema is overridden to advertise `phone` as a plain `string` (`#[ApiProperty(openapiContext: ['type' => 'string'])]`).
 
 ## Chat assistant
 
-Standalone RAG pipeline on `POST /api/chat`, scoped to Caroline's portfolio. All sources live under `src/Chat/*` (controller, services, entities, repos, command, listener, DTO, exception). Tests live under `tests/Chat/*`.
+Standalone RAG pipeline on `POST /api/chat`, with session minting on `POST /api/chat/session`, scoped to Caroline's portfolio. All sources live under `src/Chat/*` (controllers, services, entities, repos, command, listener, DTO, exception, `Http/ProblemResponseFactory`). Tests live under `tests/Chat/*`.
 
 ### Request pipeline (in order)
 
-1. `OriginCheckListener` (priority 16, after `RouterListener` priority 32) — 403 if `Origin !== FRONT_URL`.
-2. `HCaptchaVerifier::verify($request->headers->get('X-HCaptcha-Token'))` — 403 if invalid. Shared with the contact form validator. Tokens are single-use (anti-replay; see Security model).
-3. `RateLimiterFactory $chatPerIpLimiter` (sliding window, 60/h per IP, declared in `config/packages/rate_limiter.yaml`) — 429 on overflow.
-4. JSON → `ChatRequest` DTO via Serializer + Validator constraints (`NotBlank`, `Length 1-500`, Unicode `Regex`, `Count max 6` on history) — 400 on failure.
+The chat is **two-step**: the front mints a short-lived **session token** once at `POST /api/chat/session` (one hCaptcha solve), then sends many messages to `POST /api/chat` carrying that token (header `X-Chat-Session`) until it expires — instead of a captcha per message. All pre-stream errors are `application/problem+json` (RFC 7807) via `ProblemResponseFactory`.
+
+**`POST /api/chat/session`** (`ChatSessionController`): `OriginCheckListener` (403) → `chat_session_per_ip` limiter (20/h → 429) → `HCaptchaVerifier::verify(X-HCaptcha-Token)` (fail-closed, single-use; missing/invalid → **422** violation on `token`) → returns `{session, expiresIn}`. The token is a stateless HMAC-SHA256 blob (payload `{iat, exp, nonce}`, signed with `%kernel.secret%`, TTL `CHAT_SESSION_TTL`, default 1800s) issued/validated by `ChatSessionTokenManager` — **no DB, no JWT, no SecurityBundle**.
+
+**`POST /api/chat`.** `ChatController` is thin: it runs the HTTP guards (steps 1-4) then delegates to `ChatPipeline::run()` which executes the RAG pipeline (steps 5-12) and **yields typed events** (`App\Chat\Stream\ChunkEvent` / `DoneEvent` / `ErrorEvent`); `SseStreamFactory` turns that event stream into the SSE `StreamedResponse`. No business logic lives in the controller. Steps:
+
+1. `OriginCheckListener` (priority 16, after `RouterListener` priority 32) — sets a 403 problem+json response if `Origin !== FRONT_URL` (covers both the `chat` and `chat_session` routes).
+2. `ChatSessionTokenManager::check($request->headers->get('X-Chat-Session'))` — missing/invalid → **401** problem+json `reason: session_invalid`; expired → **401** `reason: session_expired`. hCaptcha is **not** checked here (it was consumed at `/api/chat/session`).
+3. `RateLimiterFactory $chatPerIpLimiter` (sliding window, 60/h per IP, declared in `config/packages/rate_limiter.yaml`) — 429 problem+json (with `Retry-After`) on overflow.
+4. JSON → `ChatRequest` DTO via Serializer + Validator constraints (`NotBlank`, `Length 1-500`, Unicode `Regex`, `Count max 6` + `Valid` cascade into `ChatMessage` on history) — **422** problem+json (`ConstraintViolation` + `violations[]`) on validation failure; malformed JSON → **400** problem+json.
 5. `QuotaGuard` — checks the daily Gemini counter in `cache.app` (`gemini_quota.YYYY-MM-DD`, TTL 26h). If exhausted → SSE `event: error reason: quota_exceeded`, no HTTP call.
-6. `EmbeddingService::embed($question)` — Gemini `batchEmbedContents` with `outputDimensionality: 768`. 429 → `QuotaExceededException` + guard exhausted.
+6. `EmbeddingService::embed($question, EmbeddingTaskType::RetrievalQuery)` — Gemini `batchEmbedContents` with `outputDimensionality: 768` and `taskType: RETRIEVAL_QUERY`. The asymmetry matters: chunks are embedded with `RETRIEVAL_DOCUMENT` at ingest, queries with `RETRIEVAL_QUERY` here — without it the cosine scores of relevant and off-topic content overlap and no threshold separates them. 429 → `QuotaExceededException` + guard exhausted.
 7. `ChatChunkRepository::findTopK($embedding, K)` — loads all chunks from `chat_chunk`, computes cosine in PHP (`dot / (||a|| * ||b||)`), sorts, slices top-K.
 8. If `topScore < CHAT_RETRIEVAL_THRESHOLD` → SSE off-scope message + `event: done outcome: off_scope`. **No generation call** (saves quota).
 9. `PromptBuilder::build($chunks, $history, $question)` — system prompt (from `config/prompts/chat_system.txt`) + chunks + history truncated to `CHAT_HISTORY_MAX_PAIRS * 2` messages + assistant answers truncated to 200 chars.
-10. `GeminiClient::streamGenerate($prompt)` — yields tokens from Gemini `streamGenerateContent?alt=sse`.
+10. `GeminiClient::streamGenerate($prompt)` — yields tokens from Gemini `streamGenerateContent?alt=sse`. `generationConfig` sets `maxOutputTokens: 200`, `temperature: 0.2`, and **`thinkingConfig.thinkingBudget: 0`** (thinking disabled). The latter two are deliberate: on a small thinking-capable model (e.g. `gemini-3.1-flash-lite`), default thinking + high temperature produced unstable/garbled answers for this simple grounded-RAG task. Don't re-enable thinking here.
 11. Each token → SSE `event: chunk data: {"token":"..."}`. Final → `event: done outcome: answered`.
 12. `ChatLogger::log(...)` persists a row in `chat_log` (question, answer, top_score, chunks_used keys, outcome enum).
+
+**Caching to cut Gemini calls (`ChatQueryCache`, in `cache.app`).** For a stateless turn (empty `history`), `answered`/`off_scope` responses are cached by normalized question (`chat.answer.<knowledgeVersion>.<hash>`, 7-day TTL) → a repeated question costs **0** Gemini calls (the cached answer is replayed as SSE). Query embeddings are cached separately (`chat.qembed.<model>.<hash>`, 30-day TTL, keyed by `GEMINI_EMBEDDING_MODEL`) → a repeated question with history costs 1 call (generation only). Error/quota/leak outcomes are never cached. The answer cache is invalidated on every ingest via a bumped `chat.knowledge_version` stamp; query embeddings are not (they don't depend on the knowledge base). `app:chat:ask` deliberately bypasses the cache.
 
 ### Data layer
 
@@ -112,7 +122,7 @@ The Doctrine mapping for `App\Chat\Entity` is registered in `config/packages/doc
 { "entries": [ { "key": "unique.id", "type": "skill|experience|project|contact", "content": "text fed to Gemini", "tags": ["..."] } ] }
 ```
 
-The command hashes each `content` with sha256, then **inserts** new entries, **updates** changed ones, **skips** unchanged, **deletes** missing. `--force` re-embeds everything. `--file=path` overrides the default. Embeddings are batched (up to 100 per Gemini call).
+The command hashes each `content` with sha256, then **inserts** new entries, **updates** changed ones, **skips** unchanged, **deletes** missing. `--force` re-embeds everything. `--file=path` overrides the default. Embeddings are batched (up to 100 per Gemini call) with `taskType: RETRIEVAL_DOCUMENT`. **After changing the embedding model or task type, re-run with `--force` and recalibrate `CHAT_RETRIEVAL_THRESHOLD`** — the score distribution shifts. Each ingest invalidates both the chunk cache and the cached chat answers (`ChatQueryCache::invalidateAnswers()`).
 
 ### Anti-abuse: zero-budget guarantee
 
@@ -133,7 +143,7 @@ The command deletes `chat_log` rows older than `CHAT_LOG_RETENTION_DAYS` (defaul
 | Var | Default | When to change |
 |---|---|---|
 | `CHAT_RETRIEVAL_K` | 5 | Lower to save input tokens, raise if answers feel under-informed |
-| `CHAT_RETRIEVAL_THRESHOLD` | 0.65 | Lower if too many legitimate questions hit off-scope; raise if off-topic queries slip through |
+| `CHAT_RETRIEVAL_THRESHOLD` | 0.65 | Lower if too many legitimate questions hit off-scope; raise if off-topic queries slip through. Calibrate against the realized score gap measured with `app:chat:ask "..."` on in-scope vs off-topic questions |
 | `CHAT_HISTORY_MAX_PAIRS` | 3 | Lower to save tokens, raise for richer multi-turn |
 | `GEMINI_DAILY_LIMIT` | 1200 | Raise toward 1500 if traffic justifies and free tier is comfortable |
 

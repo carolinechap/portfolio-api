@@ -1,28 +1,124 @@
 {
   "entries": [
     {
-      "key": "experience.arneo-2024",
+      "key": "identity",
       "type": "experience",
-      "content": "Depuis 2024, je travaille chez Arneo, agence digitale lyonnaise, en tant que développeuse back sur des projets Symfony et Drupal.",
-      "tags": ["symfony", "drupal", "arneo"]
+      "content": "Caroline Chapeau est Lead Développeuse Back-end. Caroline est son prénom et Chapeau son nom de famille. Elle conçoit le côté serveur d'applications et de sites web en PHP, principalement avec Drupal et Symfony, et travaille à Lyon. Elle cumule plus de six ans d'expérience en développement back-end.",
+      "tags": ["caroline", "prénom", "nom", "identité", "lead", "back-end"]
     },
     {
-      "key": "skill.symfony",
-      "type": "skill",
-      "content": "Symfony 5, 6, 7 — API Platform, Doctrine ORM, Messenger, Security, Mailer.",
-      "tags": ["symfony", "php"]
+      "key": "experience.arneo",
+      "type": "experience",
+      "content": "Caroline Chapeau travaille chez ARNEO, une agence digitale lyonnaise, depuis août 2019. Elle y conçoit et développe le back-end de projets web complexes pour des grands comptes, des ETI et des acteurs du secteur public, de l'architecture jusqu'à la mise en production. C'est son poste actuel et sa principale expérience professionnelle.",
+      "tags": ["arneo", "expérience", "poste", "agence", "lyon"]
+    },
+    {
+      "key": "role.lead",
+      "type": "experience",
+      "content": "Depuis mars 2025, Caroline Chapeau est Lead Développeuse Back-end chez ARNEO. Elle pilote la conception technique des projets, fait les revues de code, cadre l'architecture et les choix techniques, organise les sprints et le dispatch des tickets, et rédige les spécifications techniques. Elle participe aussi aux estimations et aux appels d'offres, assure le mentorat et l'onboarding des développeurs, et diffuse les bonnes pratiques entre les projets.",
+      "tags": ["lead", "architecture", "revue de code", "mentorat", "management technique"]
+    },
+    {
+      "key": "experience.management",
+      "type": "experience",
+      "content": "Entre mars 2024 et février 2026, en parallèle de son poste de développeuse, Caroline Chapeau a été manager de proximité chez ARNEO sur le volet humain. Elle a conduit les entretiens annuels d'évaluation, mené des points individuels réguliers avec écoute active et suivi du bien-être, accompagné les parcours de carrière et fait le lien entre les collaborateurs et la direction sur les sujets RH. Elle a managé une équipe pendant deux ans.",
+      "tags": ["management", "manager", "équipe", "rh", "feedback"]
     },
     {
       "key": "skill.drupal",
       "type": "skill",
-      "content": "Drupal 9, 10, 11 — modules custom, hooks, services, migrations, configuration management.",
-      "tags": ["drupal", "php"]
+      "content": "Côté Drupal, Caroline Chapeau maîtrise le CMS Drupal des versions 7 à 11 : développement de modules sur-mesure, thèmes, hooks, services, migrations de données et gestion de la configuration. Elle forme aussi les clients à la prise en main du back office Drupal.",
+      "tags": ["drupal", "php", "cms", "modules", "compétences"]
+    },
+    {
+      "key": "skill.symfony",
+      "type": "skill",
+      "content": "Côté Symfony, Caroline Chapeau travaille avec le framework PHP Symfony (versions 4 à 8) et son écosystème : API Platform pour les API REST, Doctrine ORM pour la persistance des données, ainsi que les services, les événements, Messenger et Mailer. PHP est son langage principal.",
+      "tags": ["symfony", "php", "api platform", "doctrine", "compétences"]
+    },
+    {
+      "key": "skill.security-performance",
+      "type": "skill",
+      "content": "Caroline Chapeau intègre la sécurité et la performance dans ses développements back-end. Elle applique les standards OWASP, met en place des politiques de sécurité de contenu (CSP), de l'authentification à deux facteurs (2FA) et du SSO. Elle audite et optimise les performances back-end et applique les bonnes pratiques d'éco-conception web.",
+      "tags": ["sécurité", "owasp", "csp", "2fa", "sso", "performance", "éco-conception"]
+    },
+    {
+      "key": "skill.tooling",
+      "type": "skill",
+      "content": "Au-delà de PHP, Caroline Chapeau travaille avec MySQL (optimisation de requêtes et indexation), Git, l'intégration et le déploiement continus (CI/CD avec GitLab), Docker et Linux. Elle crée aussi des outils internes pour fluidifier le travail des équipes : automatisation, modules réutilisables, monitoring.",
+      "tags": ["mysql", "git", "ci/cd", "gitlab", "docker", "linux", "devops"]
+    },
+    {
+      "key": "skill.frontend",
+      "type": "skill",
+      "content": "Même si son cœur de métier est le back-end, Caroline Chapeau maîtrise aussi le front : elle est à l'aise avec Vue.js et développe en JavaScript et en TypeScript. Ce sont des technologies dans ses cordes, qui lui permettent de travailler de bout en bout et de collaborer efficacement avec les équipes front.",
+      "tags": ["vue.js", "vuejs", "javascript", "typescript", "front-end", "front", "fullstack", "compétences"]
+    },
+    {
+      "key": "projects.arneo",
+      "type": "project",
+      "content": "Caroline Chapeau a livré plusieurs projets Drupal chez ARNEO, dont le plus notable est Emeis. Parmi ses réalisations : la conception de modules Drupal métier pour des grands comptes, de l'architecture à la livraison, la création de sites B2B avec dashboard et modules et thèmes sur-mesure, l'intégration de services tiers comme Salesforce, des CRM et du SSO, la création de workflows éditoriaux et la résolution d'incidents critiques en production. Pour le détail de ses projets, le mieux est de consulter la page /projects de son portfolio.",
+      "tags": ["projets", "drupal", "b2b", "salesforce", "crm", "intégration", "emeis", "projects"]
+    },
+    {
+      "key": "projects.emeis",
+      "type": "project",
+      "content": "Le projet le plus notable de Caroline Chapeau chez ARNEO est Emeis, un site développé sous Drupal 10 en architecture multisite et multithème. La gestion de ce multisite et de ce multithème était le gros enjeu technique du projet. Sa fonctionnalité la plus importante est un store locator, un outil de recherche et de localisation des établissements. Pour en savoir plus sur ce projet et les autres, voir la page /projects de son portfolio.",
+      "tags": ["emeis", "projet", "drupal", "drupal 10", "multisite", "multithème", "store locator", "arneo"]
+    },
+    {
+      "key": "projects.personal",
+      "type": "project",
+      "content": "En dehors d'ARNEO, Caroline Chapeau mène aussi des projets personnels, dont deux développés avec le framework Symfony. Ils lui permettent d'explorer de nouvelles approches et de garder sa pratique à jour. Le détail de ses projets personnels et professionnels est présenté sur la page /projects de son portfolio.",
+      "tags": ["projets personnels", "perso", "symfony", "php", "side project", "portfolio", "projects"]
+    },
+    {
+      "key": "background.reconversion",
+      "type": "experience",
+      "content": "Caroline Chapeau s'est reconvertie vers le développement web en 2018. Avant cela, elle avait un parcours dans le tourisme et l'événementiel, avec un master en ingénierie du tourisme et plusieurs expériences à l'étranger, entre la France, le Canada, l'Espagne, Taïwan et la Nouvelle-Zélande. Elle a commencé à apprendre le code en autodidacte avant de suivre une formation officielle de développeuse web. Ce parcours international lui a surtout appris l'adaptabilité.",
+      "tags": ["reconversion", "parcours", "autodidacte", "tourisme", "international"]
+    },
+    {
+      "key": "background.international",
+      "type": "experience",
+      "content": "Caroline Chapeau a beaucoup voyagé et vécu à l'étranger, et c'est ce qui explique son aisance en langues et sa capacité d'adaptation. Elle a notamment passé un an à Taïwan dans le cadre d'un échange Rotary : elle y a appris le chinois à l'université et vécu dans des familles d'accueil. Elle a aussi vécu et travaillé au Canada, en Espagne et en Nouvelle-Zélande. C'est ce parcours international qui explique qu'elle parle anglais (Canada, Nouvelle-Zélande), espagnol (Espagne) et chinois (Taïwan).",
+      "tags": ["international", "voyage", "étranger", "taïwan", "rotary", "canada", "espagne", "nouvelle-zélande", "langues", "adaptabilité"]
+    },
+    {
+      "key": "formation",
+      "type": "experience",
+      "content": "Côté formation, Caroline Chapeau a suivi le programme de spécialisation Symfony de SensioLabs University en 2019, une formation de développeuse web intégratrice chez WebForce3 en 2018-2019 et des cours sur OpenClassrooms en 2017. Elle est aussi titulaire d'un master en ingénierie du tourisme et de l'hôtellerie en management international.",
+      "tags": ["formation", "sensiolabs", "webforce3", "openclassrooms", "diplôme"]
+    },
+    {
+      "key": "languages",
+      "type": "skill",
+      "content": "Caroline Chapeau parle français en langue maternelle, anglais à un niveau professionnel courant, espagnol et chinois à un niveau intermédiaire. Ces langues viennent de son parcours à l'étranger : le Canada et la Nouvelle-Zélande pour l'anglais, l'Espagne pour l'espagnol, et une année passée à Taïwan (échange Rotary, université et familles d'accueil) pour le chinois. Elle est à l'aise pour travailler dans des équipes internationales et en remote.",
+      "tags": ["langues", "anglais", "espagnol", "chinois", "remote", "international", "taïwan", "voyage"]
+    },
+    {
+      "key": "certifications",
+      "type": "skill",
+      "content": "Caroline Chapeau a obtenu plusieurs certifications, notamment Claude Code in Action et Learning AI Through Visualization sur l'usage de l'intelligence artificielle, Digital Active, ainsi qu'une certification sur la conception de sites web avec PHP et MySQL.",
+      "tags": ["certifications", "ia", "claude code", "php", "mysql"]
+    },
+    {
+      "key": "interests.python-ai",
+      "type": "skill",
+      "content": "Caroline Chapeau s'intéresse beaucoup au Python et à l'intelligence artificielle. Ce sont des sujets qu'elle explore et expérimente sur son temps personnel, par curiosité et pour faire évoluer sa pratique au-delà de son périmètre back-end PHP au quotidien.",
+      "tags": ["python", "ia", "intelligence artificielle", "veille", "temps personnel", "curiosité", "centres d'intérêt"]
+    },
+    {
+      "key": "availability",
+      "type": "contact",
+      "content": "Sur sa disponibilité : Caroline Chapeau est en poste chez ARNEO depuis 2019, où elle est Lead Développeuse Back-end depuis 2025, mais elle reste toujours à l'écoute du marché. Elle n'est donc pas en recherche active mais ouverte aux opportunités de développeuse back-end senior ou de lead dev, à Lyon, en hybride ou en full remote. Sa stack est ouverte : Symfony, Laravel ou tout environnement proche de PHP, et elle est prête à apprendre de nouvelles technologies. Les sujets qui la motivent : le produit à impact, les équipes engagées et le code maintenable et durable.",
+      "tags": ["disponibilité", "recrutement", "à l'écoute", "en poste", "remote", "lyon", "lead"]
     },
     {
       "key": "contact",
       "type": "contact",
-      "content": "Pour me contacter, utilise le formulaire sur caroline-chapeau.com ou écris-moi à contact@caroline-chapeau.com.",
-      "tags": ["contact"]
+      "content": "Pour contacter Caroline Chapeau, utilisez le formulaire de contact sur son site caroline-chapeau.com, écrivez-lui par e-mail à contact@caroline-chapeau.com ou passez par son profil LinkedIn (linkedin.com/in/c-chapeau). C'est le moyen de la joindre, par exemple pour discuter de d'un poste, recrutement ou tout simplement de sujets tech.",
+      "tags": ["contact", "email", "linkedin", "mission", "recrutement"]
     }
   ]
 }

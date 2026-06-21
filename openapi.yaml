@@ -1,14 +1,27 @@
 openapi: 3.1.0
 info:
-  title: Portfolio Chat API
+  title: Portfolio Public API
   version: "1.0.0"
   description: |
-    Endpoint public du chatbot RAG du portfolio de Caroline Chapeau.
-    Pipeline : hCaptcha → rate-limit IP → validation DTO → embedding Gemini →
-    retrieval cosinus → génération Gemini en streaming.
+    API publique du portfolio de Caroline Chapeau. Deux surfaces, toutes deux
+    **anonymes** (pas de JWT) : le formulaire de contact (`POST /api/contacts`)
+    et le chatbot RAG (`POST /api/chat`). La sécurité repose sur l'`Origin`,
+    hCaptcha, le rate-limit par IP et un honeypot — pas sur une identité.
 
-    La réponse `200` est un flux **Server-Sent Events** (`text/event-stream`)
-    qui ne peut pas être pleinement typé en OpenAPI. La grammaire est :
+    Deux pièges qui diffèrent entre les deux endpoints :
+
+    - **Captcha & session** : le contact envoie le token hCaptcha dans le corps
+      (`token`) à chaque envoi. Le chat résout le captcha **une seule fois** via
+      `POST /api/chat/session` (header `X-HCaptcha-Token`) pour obtenir un jeton
+      de session court, puis envoie ce jeton (header `X-Chat-Session`) sur chaque
+      message jusqu'à expiration.
+    - **Format / erreurs** : `/api/contacts` est une ressource API Platform en
+      JSON-LD (`Content-Type: application/ld+json` obligatoire). `/api/chat`
+      attend `application/json` et répond en SSE. Dans les deux cas, les erreurs
+      HTTP sont en `application/problem+json` (RFC 7807).
+
+    Le chatbot renvoie un flux **Server-Sent Events** (`text/event-stream`) qui
+    ne peut pas être pleinement typé en OpenAPI. La grammaire est :
 
     ```
     event: chunk
@@ -21,7 +34,8 @@ info:
     data: {"reason": "quota_exceeded" | "internal_error", "message": "..."}
     ```
 
-    Voir `docs/chatbot/README.md` pour l'intégration complète.
+    Voir `CHATBOT-FRONT.md` (à la racine du repo) pour l'intégration front
+    complète du chat.
 
 servers:
   - url: https://api.example.com
@@ -30,16 +44,147 @@ servers:
     description: Dev local (`symfony serve`)
 
 paths:
-  /api/chat:
+  /api/contacts:
     post:
-      operationId: chat
-      summary: Envoie une question au chatbot et reçoit la réponse en SSE
+      operationId: postContact
+      summary: Envoie le formulaire de contact (email + persistance)
       description: |
-        Endpoint stateless. Aucune authentification JWT. La sécurité repose sur :
-        - Origin header (doit matcher `FRONT_URL` côté back)
-        - hCaptcha (header `X-HCaptcha-Token`, single-use)
-        - Rate-limit sliding window 60 req/h/IP
-        - Honeypot `website` (doit rester vide)
+        Ressource API Platform. Aucune authentification. Sécurité :
+        - `Origin` header : doit matcher `FRONT_URL` côté back, sinon `403`.
+        - hCaptcha : le token va dans le **corps JSON** (`token`), **pas** dans
+          un header (contrairement à `/api/chat`). Single-use.
+        - Rate-limit : sliding window **10 req/h/IP**, plus un plafond global de
+          **100/jour** toutes IP confondues (consommé après validation captcha).
+        - Honeypot `website` : doit rester vide.
+
+        ⚠️ Le `Content-Type` **doit** être `application/ld+json` : seul le format
+        JSON-LD est activé côté API Platform, un `application/json` est rejeté en
+        `415`. Mettre aussi `Accept: application/ld+json`.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          description: |
+            Renseigné automatiquement par le navigateur. Doit être strictement
+            égal à `FRONT_URL` côté back (sinon `403`).
+          schema:
+            type: string
+            format: uri
+      requestBody:
+        required: true
+        content:
+          application/ld+json:
+            schema:
+              $ref: "#/components/schemas/ContactRequest"
+            examples:
+              minimal:
+                summary: Champs obligatoires uniquement
+                value:
+                  firstname: "Jean"
+                  lastname: "Dupont"
+                  email: "jean.dupont@example.com"
+                  message: "Bonjour, je souhaiterais échanger sur un projet."
+                  token: "<token-hcaptcha>"
+                  website: ""
+              full:
+                summary: Tous les champs (téléphone avec préfixe international)
+                value:
+                  firstname: "Jean"
+                  lastname: "Dupont"
+                  email: "jean.dupont@example.com"
+                  phone: "+33612345678"
+                  company: "ACME"
+                  opportunity: "Refonte de site"
+                  message: "Bonjour, je souhaiterais échanger sur un projet."
+                  token: "<token-hcaptcha>"
+                  website: ""
+      responses:
+        "201":
+          description: |
+            Contact créé : l'email est envoyé puis la soumission persistée. Le
+            corps renvoie la ressource sérialisée (groupe `contact:read`) dans
+            l'enveloppe JSON-LD (`@context`/`@id`/`@type`). Les champs `token` et
+            `website` ne sont jamais renvoyés.
+          content:
+            application/ld+json:
+              schema:
+                $ref: "#/components/schemas/ContactResponse"
+        "403":
+          description: "`Origin` ne matche pas `FRONT_URL`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+        "415":
+          description: |
+            `Content-Type` non supporté. Utiliser `application/ld+json`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+        "422":
+          description: |
+            Validation échouée : champ obligatoire manquant ou trop long, email
+            ou téléphone invalide, captcha manquant/invalide, ou honeypot rempli.
+            Le corps liste les `violations` (une clé de message par champ).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ConstraintViolation"
+              examples:
+                missing_field:
+                  summary: Champ obligatoire vide
+                  value:
+                    "@type": "ConstraintViolation"
+                    status: 422
+                    violations:
+                      - propertyPath: "firstname"
+                        message: "error.field.not_blank"
+                    detail: "firstname: error.field.not_blank"
+                    title: "An error occurred"
+                bad_captcha:
+                  summary: Captcha invalide
+                  value:
+                    "@type": "ConstraintViolation"
+                    status: 422
+                    violations:
+                      - propertyPath: "token"
+                        message: "error.captcha.invalid"
+                    detail: "token: error.captcha.invalid"
+                    title: "An error occurred"
+                bad_phone:
+                  summary: Téléphone sans préfixe international
+                  value:
+                    "@type": "ConstraintViolation"
+                    status: 422
+                    violations:
+                      - propertyPath: "phone"
+                        message: "This value should be of type string."
+                    detail: "phone: This value should be of type string."
+                    title: "An error occurred"
+        "429":
+          description: |
+            Rate-limit dépassé (10 req/h/IP, ou plafond global 100/jour).
+          headers:
+            Retry-After:
+              description: Secondes avant la prochaine fenêtre.
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+
+  /api/chat/session:
+    post:
+      operationId: createChatSession
+      summary: Émet un jeton de session chat à partir d'un captcha hCaptcha
+      description: |
+        À appeler **une fois** au début de la conversation. Vérifie le token
+        hCaptcha (header `X-HCaptcha-Token`, single-use, fail-closed) et renvoie
+        un jeton de session court à réutiliser sur `POST /api/chat` (header
+        `X-Chat-Session`) jusqu'à expiration. Rate-limité 20 req/h/IP.
       parameters:
         - in: header
           name: X-HCaptcha-Token
@@ -48,6 +193,83 @@ paths:
           schema:
             type: string
             minLength: 1
+        - in: header
+          name: Origin
+          required: true
+          description: Doit être strictement égal à `FRONT_URL` côté back (sinon `403`).
+          schema:
+            type: string
+            format: uri
+      responses:
+        "200":
+          description: Jeton de session émis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSession"
+              examples:
+                ok:
+                  value:
+                    session: "eyJpYXQiOjE3Li4u.SGc5Li4u"
+                    expiresIn: 1800
+        "403":
+          description: "`Origin` ne matche pas `FRONT_URL`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+        "422":
+          description: Captcha manquant ou invalide (violation sur `token`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ConstraintViolation"
+              examples:
+                captcha_invalid:
+                  value:
+                    "@type": "ConstraintViolation"
+                    status: 422
+                    violations:
+                      - propertyPath: "token"
+                        message: "error.captcha.invalid"
+                    detail: "token: error.captcha.invalid"
+                    title: "An error occurred"
+        "429":
+          description: Rate-limit dépassé (20 req/h/IP).
+          headers:
+            Retry-After:
+              description: Secondes avant la prochaine fenêtre.
+              schema:
+                type: integer
+                minimum: 0
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+
+  /api/chat:
+    post:
+      operationId: chat
+      summary: Envoie une question au chatbot et reçoit la réponse en SSE
+      description: |
+        Endpoint stateless. Aucune authentification JWT. Nécessite un jeton de
+        session valide (header `X-Chat-Session`) obtenu via `POST /api/chat/session`.
+        Sécurité :
+        - Origin header (doit matcher `FRONT_URL` côté back)
+        - Jeton de session signé (header `X-Chat-Session`) — le captcha est résolu
+          une seule fois à `/api/chat/session`, pas à chaque message
+        - Rate-limit sliding window 60 req/h/IP
+        - Honeypot `website` (doit rester vide)
+      parameters:
+        - in: header
+          name: X-Chat-Session
+          required: true
+          description: |
+            Jeton de session émis par `POST /api/chat/session`, réutilisable
+            jusqu'à expiration. Manquant/invalide → `401` (`reason: session_invalid`),
+            expiré → `401` (`reason: session_expired`) : redemander une session.
+          schema:
+            type: string
         - in: header
           name: Origin
           required: true
@@ -133,27 +355,57 @@ paths:
                     event: error
                     data: {"reason":"quota_exceeded","message":"L'assistant est très sollicité aujourd'hui et n'est plus disponible. Réessaie demain ou utilise le formulaire de contact."}
         "400":
-          description: Payload JSON invalide ou validation DTO échouée.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-              examples:
-                invalid_payload:
-                  value:
-                    error: invalid payload
-                validation_failed:
-                  value:
-                    error: validation failed
-        "403":
           description: |
-            `Origin` ne matche pas `FRONT_URL` **ou** hCaptcha invalide.
-            Réponse texte Symfony standard.
+            Corps JSON malformé (non parsable). La validation des champs renvoie
+            un `422`, pas un `400`.
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                example: Origin not allowed
+                $ref: "#/components/schemas/ProblemError"
+        "401":
+          description: |
+            Jeton de session (`X-Chat-Session`) manquant, invalide ou expiré.
+            Le corps porte un champ `reason` : `session_invalid` ou
+            `session_expired`. Dans les deux cas, redemander une session via
+            `POST /api/chat/session` puis réessayer.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+              examples:
+                expired:
+                  value:
+                    "@type": "Error"
+                    status: 401
+                    title: "An error occurred"
+                    detail: "Chat session token missing, invalid or expired."
+                    reason: "session_expired"
+        "403":
+          description: "`Origin` ne matche pas `FRONT_URL`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+        "422":
+          description: |
+            Validation échouée : `question` (vide, trop longue, ou pattern
+            d'injection), `history` (entrée invalide), ou honeypot `website`
+            rempli. Le corps liste les `violations`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ConstraintViolation"
+              examples:
+                question_blank:
+                  summary: Champ question vide
+                  value:
+                    "@type": "ConstraintViolation"
+                    status: 422
+                    violations:
+                      - propertyPath: "question"
+                        message: "This value should not be blank."
+                    detail: "question: This value should not be blank."
+                    title: "An error occurred"
         "429":
           description: Rate-limit IP dépassé (60 req/h sliding window).
           headers:
@@ -163,10 +415,9 @@ paths:
                 type: integer
                 minimum: 0
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                example: Rate limit exceeded
+                $ref: "#/components/schemas/ProblemError"
 
 components:
   schemas:
@@ -249,10 +500,144 @@ components:
           type: string
           description: Message FR prêt à afficher côté UI.
 
-    ErrorResponse:
+    ContactRequest:
       type: object
-      required: [error]
+      required: [firstname, lastname, email, message, token]
       properties:
-        error:
+        firstname:
           type: string
-          enum: [invalid payload, validation failed]
+          maxLength: 50
+        lastname:
+          type: string
+          maxLength: 50
+        email:
+          type: string
+          format: email
+          maxLength: 100
+        message:
+          type: string
+          maxLength: 5000
+        phone:
+          type: [string, "null"]
+          description: |
+            Optionnel. Le préfixe international `+` est **obligatoire** (région
+            par défaut FR). Une chaîne vide devient `null`. Un numéro sans `+` ou
+            non parsable est rejeté en `422` (violation sur `phone`).
+          example: "+33612345678"
+        company:
+          type: [string, "null"]
+          maxLength: 100
+        opportunity:
+          type: [string, "null"]
+          maxLength: 100
+        token:
+          type: string
+          minLength: 1
+          description: |
+            Token hCaptcha frais (single-use), transmis dans le **corps** (pas en
+            header, contrairement à `/api/chat`). Manquant → `422`
+            (`error.captcha.missing`) ; invalide → `422` (`error.captcha.invalid`).
+        website:
+          type: string
+          description: |
+            Champ honeypot. **Doit rester vide / absent.** Ne jamais l'afficher
+            ni le pré-remplir. Non vide → `422` (`error.field.invalid`).
+          enum: [""]
+          default: ""
+
+    ContactResponse:
+      type: object
+      description: |
+        Ressource renvoyée en `201` (groupe `contact:read`), enveloppée en
+        JSON-LD. Les champs `token` et `website` (write-only) ne sont jamais
+        renvoyés ; l'`id` interne non plus.
+      properties:
+        firstname:
+          type: string
+        lastname:
+          type: string
+        phone:
+          type: [string, "null"]
+          description: Numéro normalisé au format E.164.
+        email:
+          type: string
+        message:
+          type: string
+        company:
+          type: [string, "null"]
+        opportunity:
+          type: [string, "null"]
+
+    ConstraintViolation:
+      type: object
+      description: |
+        Erreur de validation API Platform (RFC 7807),
+        `Content-Type: application/problem+json`.
+      properties:
+        "@type":
+          type: string
+          example: ConstraintViolation
+        status:
+          type: integer
+          example: 422
+        title:
+          type: string
+          example: An error occurred
+        detail:
+          type: string
+          description: |
+            Résumé lisible, ex. `firstname: error.field.not_blank`.
+        violations:
+          type: array
+          items:
+            type: object
+            properties:
+              propertyPath:
+                type: string
+                description: Nom du champ en faute.
+              message:
+                type: string
+                description: |
+                  Clé de message à mapper côté front. Valeurs possibles :
+                  `error.field.not_blank`, `error.field.too_long`,
+                  `error.field.format`, `error.captcha.missing`,
+                  `error.captcha.invalid`, `error.field.invalid` (honeypot).
+                  Pour un téléphone mal formé, message de type générique sur
+                  `phone`.
+
+    ProblemError:
+      type: object
+      description: |
+        Erreur générique RFC 7807, `application/problem+json`, utilisée pour
+        `400` / `401` / `403` / `415` / `429`. En dev/test un champ `trace` est
+        ajouté ; il est absent en prod.
+      properties:
+        "@type":
+          type: string
+          example: Error
+        status:
+          type: integer
+        title:
+          type: string
+          example: An error occurred
+        detail:
+          type: string
+        reason:
+          type: string
+          description: |
+            Présent sur les `401` de `/api/chat` : indique au front de redemander
+            une session via `POST /api/chat/session`.
+          enum: [session_invalid, session_expired]
+
+    ChatSession:
+      type: object
+      description: Réponse `200` de `POST /api/chat/session`.
+      required: [session, expiresIn]
+      properties:
+        session:
+          type: string
+          description: Jeton signé à renvoyer dans le header `X-Chat-Session` sur `/api/chat`.
+        expiresIn:
+          type: integer
+          description: Durée de validité du jeton en secondes (défaut 1800).
+          example: 1800
