@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Chat\Service;
 
+use App\Chat\Entity\ChatOutcome;
 use App\Chat\Repository\ChatChunkRepository;
+use App\Chat\Service\CachedChatAnswer;
+use App\Chat\Service\ChatQueryCache;
 use App\Chat\Service\EmbeddingService;
+use App\Chat\Service\EmbeddingTaskType;
 use App\Chat\Service\KnowledgeIngester;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -25,8 +29,8 @@ final class KnowledgeIngesterTest extends KernelTestCase
 
         $c->set(EmbeddingService::class, new class extends EmbeddingService {
             public function __construct() {}
-            public function embed(string $text): array { return [1.0, 0.0]; }
-            public function embedBatch(array $texts): array
+            public function embed(string $text, EmbeddingTaskType $taskType): array { return [1.0, 0.0]; }
+            public function embedBatch(array $texts, EmbeddingTaskType $taskType): array
             {
                 return array_map(static fn () => [1.0, 0.0], $texts);
             }
@@ -34,6 +38,18 @@ final class KnowledgeIngesterTest extends KernelTestCase
 
         $this->ingester = $c->get(KnowledgeIngester::class);
         $this->repo = $c->get(ChatChunkRepository::class);
+    }
+
+    public function testIngestionInvalidatesCachedAnswers(): void
+    {
+        $cache = self::getContainer()->get(ChatQueryCache::class);
+        self::assertInstanceOf(ChatQueryCache::class, $cache);
+        $cache->storeAnswer('Sa stack ?', new CachedChatAnswer('Symfony.', ChatOutcome::Answered, 0.8, null));
+        self::assertNotNull($cache->getAnswer('Sa stack ?'));
+
+        $this->ingester->ingest(['entries' => [['key' => 'k1', 'type' => 'skill', 'content' => 'A']]]);
+
+        self::assertNull($cache->getAnswer('Sa stack ?'));
     }
 
     public function testInsertsNewEntries(): void
