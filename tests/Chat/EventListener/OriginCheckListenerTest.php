@@ -9,7 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 final class OriginCheckListenerTest extends TestCase
@@ -25,15 +24,22 @@ final class OriginCheckListenerTest extends TestCase
         $this->expectNotToPerformAssertions();
     }
 
-    public function testDeniesMismatchedOrigin(): void
+    public function testDeniesMismatchedOriginWithProblemJson(): void
     {
         $listener = new OriginCheckListener('https://example.com');
         $request = Request::create('/api/chat', 'POST', server: ['HTTP_ORIGIN' => 'https://evil.test']);
         $request->attributes->set('_route', 'chat');
         $event = new RequestEvent(self::kernel(), $request, HttpKernelInterface::MAIN_REQUEST);
 
-        $this->expectException(AccessDeniedHttpException::class);
         $listener($event);
+
+        $response = $event->getResponse();
+        self::assertNotNull($response);
+        self::assertSame(403, $response->getStatusCode());
+        self::assertStringContainsString(
+            'application/problem+json',
+            (string) $response->headers->get('Content-Type'),
+        );
     }
 
     public function testAllowsMatchingOrigin(): void

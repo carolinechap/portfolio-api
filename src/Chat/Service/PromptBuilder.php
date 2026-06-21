@@ -34,10 +34,18 @@ final readonly class PromptBuilder
      * @param ChatChunk[]   $chunks   Retrieved context chunks (in display order)
      * @param ChatMessage[] $history  Conversation history, oldest-first
      * @param string        $question Current user question
+     * @param string|null   $greeting Greeting word the model should use if it greets
+     *                                 back ("Bon matin" before 13h, "Bonjour" otherwise)
      */
-    public function build(array $chunks, array $history, string $question): string
+    public function build(array $chunks, array $history, string $question, ?string $greeting = null): string
     {
-        $parts = [rtrim($this->systemPrompt), '', 'CONTEXTE :'];
+        $parts = [rtrim($this->systemPrompt)];
+        if ($greeting !== null) {
+            $parts[] = '';
+            $parts[] = \sprintf('SALUTATION : si tu salues, commence par « %s ».', $greeting);
+        }
+        $parts[] = '';
+        $parts[] = 'CONTEXTE :';
         foreach ($chunks as $i => $chunk) {
             $parts[] = \sprintf('[%d] %s', $i + 1, $chunk->getContent());
         }

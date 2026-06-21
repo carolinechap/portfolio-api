@@ -4,6 +4,8 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # Default chat session token lifetime (seconds). Override in .env.local.
+    env(CHAT_SESSION_TTL): '1800'
 
 services:
     # default configuration for services in *this* file
@@ -23,10 +25,20 @@ services:
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
 
-    # Chat controller invoked directly from routes.yaml — must be tagged
-    # so the resolver can fetch it from the container.
+    # Chat controllers invoked directly from routes.yaml — must be tagged
+    # so the resolver can fetch them from the container.
     App\Chat\Controller\ChatController:
         tags: ['controller.service_arguments']
+    App\Chat\Controller\ChatSessionController:
+        tags: ['controller.service_arguments']
+
+    # Fetched from the container in tests (mint a token / assert validity).
+    App\Chat\Service\ChatSessionTokenManager:
+        public: true
+    App\Chat\Service\ChatQueryCache:
+        public: true
+    App\Chat\Service\ChatPipeline:
+        public: true
 
     # External services that are stubbed in tests via
     # `self::getContainer()->set(...)`. Marked public to prevent the

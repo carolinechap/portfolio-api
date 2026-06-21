@@ -35,8 +35,9 @@ final class ChatRequest
             message: 'Question contains a forbidden pattern.',
         )]
         public string $question = '',
-        /** @var array<int, array{role: string, content: string}> */
+        /** @var array<int, ChatMessage> */
         #[Assert\Count(max: 6)]
+        #[Assert\Valid]
         public array $history = [],
         #[Assert\Blank(message: 'Honeypot field must be empty.')]
         public string $website = '',

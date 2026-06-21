@@ -1,4 +1,9 @@
 chat:
     path: /api/chat
-    controller: App\Chat\Controller\ChatController
+    controller: App\Chat\Controller\ChatController::chat
+    methods: ['POST']
+
+chat_session:
+    path: /api/chat/session
+    controller: App\Chat\Controller\ChatSessionController::create
     methods: ['POST']
