@@ -81,6 +81,10 @@ class GeminiClient
                     ],
                     'generationConfig' => [
                         'maxOutputTokens' => 200,
+                        'temperature' => 0.2,
+                        'thinkingConfig' => [
+                            'thinkingBudget' => 0,
+                        ],
                     ],
                 ],
                 'timeout' => 60,
